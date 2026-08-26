@@ -2,7 +2,7 @@
 
 Home Assistant profile manager and dedicated control surface for a staged indoor grow system.
 
-## Current scope (0.26.0)
+## Current scope (0.26.1)
 
 - Normalizes mapped Home Assistant entities and enrolled Atlas I2C probes into one read-only sensor-health snapshot.
 - Reports source, value/unit, data age, unavailable/stale/suspect state, sudden spikes, multi-sensor divergence, calibration age, profile-target duration, and an explainable confidence score.
@@ -58,7 +58,7 @@ The **Hydroponic System** panel is registered automatically. Monitoring through 
 
 Copy `custom_components/hydroponic_system` into Home Assistant's `config/custom_components` directory, restart Home Assistant, and add the integration from Settings → Devices & services.
 
-The profile editor, entity mappings, and sensor-health evaluator are intentionally separate from the control engine. Saving a profile, selecting a stage, adding a journal event, changing health settings, or mapping equipment in version 0.26.0 does not operate equipment.
+The profile editor, entity mappings, and sensor-health evaluator are intentionally separate from the control engine. Saving a profile, selecting a stage, adding a journal event, changing health settings, or mapping equipment in version 0.26.1 does not operate equipment.
 
 ## Journal durability
 

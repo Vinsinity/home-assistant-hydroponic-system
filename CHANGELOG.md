@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.1
+
+- Keep unavailable sensor values as “no data” in both the health table and metric cards instead of coercing them to zero.
+
 ## 0.26.0
 
 - Add a deterministic, read-only sensor health and confidence model.
