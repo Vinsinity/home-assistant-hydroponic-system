@@ -2,12 +2,23 @@
 
 Home Assistant profile manager and dedicated control surface for a staged indoor grow system.
 
-## Current scope (0.25.0)
+## Current scope (0.27.0)
+
+### Grow tracking and Assistant
 
 - Stores every cultivation under a permanent unique ID; starting a new cultivation does not replace completed history.
 - Keeps an append-only event journal for stage transitions, notes, water work, nutrient/pH doses, reservoir volume, calibration, maintenance, photos, alarms, and future read-only assistant records.
 - Mirrors the complete cultivation journal to a second Home Assistant storage document and can download a checksummed JSON backup from the Calendar tab.
-- Captures plant species, cultivar, source, plant count, grow method, reservoir/system volume, photoperiod source, nutrient program, start date, and notes when cultivation starts.
+- Provides a short, three-step grow-start wizard for plant species, cultivar, source, plant count, start date, nutrient program, and notes.
+- Stores a reusable cabin, hydroponic-system, and lighting profile including dimensions, method, volumes, capacity, fixture identity/power/count, dimmer, height, and daily schedule.
+- Takes an immutable snapshot of the cabin/system/light profile when a cultivation starts, so later configuration edits cannot rewrite historical grow context.
+- Adds a product-focused Overview with grow/stage day, today's light plan, recent journal records, and quick actions for notes, water, nutrients, and photos.
+- Hides unconfigured metric and security panels behind compact setup prompts instead of filling the Overview with empty technical cards.
+- Adds a read-only Grow Assistant powered by Home Assistant's official AI Task providers. The selected model receives grow context but no Home Assistant control API or tools.
+- Lets the user choose 24-hour or 7-day sensor summaries, response language/detail, optional camera snapshots, and optional persistent notifications.
+- Appends every generated Assistant report to the same immutable cultivation journal as an `ai_recommendation` event.
+
+### Monitoring and local hardware
 
 - Optionally discovers Atlas Scientific EZO pH, EC, DO, and RTD circuits directly on Raspberry Pi I2C bus 1.
 - Creates native Home Assistant sensor entities and polls them locally every 30 seconds.
@@ -22,13 +33,12 @@ Home Assistant profile manager and dedicated control surface for a staged indoor
 - Stores six editable example stage profiles in one Home Assistant storage document.
 - Provides a dedicated responsive profile editor panel.
 - Uses Home Assistant cards, controls, spacing, and theme variables in the panel.
-- Provides Overview, Profiles, and Settings tabs directly inside the panel.
+- Keeps daily product navigation focused on Overview, Journal, Album, Cabin, Assistant, and Setup; profiles, nutrients, hardware, dosing, and sensor mappings remain available from Setup.
 - Shows current readings with 24-hour Recorder history charts.
 - Lets administrators change device, sensor, and equipment mappings without opening the integration options dialog.
 - Supports unlimited camera and moisture-sensor mappings with a security overview and water-alarm state.
-- Uses a fixed four-camera desktop grid and keeps security directly below the stage tabs.
+- Shows configured cameras and safety sensors on the Overview while keeping the empty state compact.
 - Maps an RDWC water-level sensor and RDWC circulation pump; air-circulation fans remain outside automatic control.
-- Lists incomplete required mappings in the panel header.
 - Shows live sensor values beside the selected profile targets.
 - Maps multiple environmental devices, automatically discovers their CO2, temperature, and humidity entities, and averages available readings.
 - Calculates live VPD from the discovered average temperature and humidity.
@@ -52,11 +62,13 @@ The **Hydroponic System** panel is registered automatically. Monitoring through 
 
 Copy `custom_components/hydroponic_system` into Home Assistant's `config/custom_components` directory, restart Home Assistant, and add the integration from Settings → Devices & services.
 
-The profile editor and entity mappings are intentionally separate from the control engine. Saving a profile, selecting a stage, adding a journal event, or mapping equipment in version 0.25.0 does not operate equipment.
+The profile editor, entity mappings, grow journal, and Grow Assistant are intentionally separate from the control engine. Saving a profile, selecting a stage, adding a journal event, generating an AI report, or mapping equipment in version 0.27.0 does not operate equipment.
+
+Grow Assistant requires a Home Assistant integration that exposes an `ai_task` entity (for example, a supported local or cloud AI provider). Model choice and API credentials remain in that provider's Home Assistant configuration. Hydroponic System sends no LLM tools, service-call access, or device-control API with the task.
 
 ## Journal durability
 
-The integration writes cultivation records and append-only events to the primary Home Assistant storage document and a checksummed recovery document. Completed cultivations remain in the archive when another cultivation starts. The Calendar tab can also download the complete journal as checksummed JSON.
+The integration writes cultivation records, their system snapshots, and append-only events to the primary Home Assistant storage document and a checksummed recovery document. Completed cultivations remain in the archive when another cultivation starts. The Journal tab can also download the complete journal as checksummed JSON.
 
 These protections cover application errors and accidental replacement. They cannot protect against loss of the entire storage device, so keep regular Home Assistant backups and download the journal JSON to another device periodically.
 

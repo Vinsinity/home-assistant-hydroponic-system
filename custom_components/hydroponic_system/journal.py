@@ -90,6 +90,7 @@ def empty_cultivation_view() -> dict[str, Any]:
         "id": "",
         "name": "",
         "identity": deepcopy(IDENTITY_DEFAULTS),
+        "system_snapshot": {},
         "start_date": "",
         "started_at": "",
         "completed_at": "",
@@ -234,6 +235,11 @@ def _normalize_record(record: dict[str, Any], record_id: str) -> dict[str, Any]:
     )
     result["updated_at"] = str(updated_at)[:40]
     result["identity"] = normalize_identity(result.get("identity"))
+    result["system_snapshot"] = _bounded_json(
+        result.get("system_snapshot")
+        if isinstance(result.get("system_snapshot"), dict)
+        else {}
+    )
     result["plan"] = deepcopy(result.get("plan") if isinstance(result.get("plan"), list) else [])
     result["transitions"] = deepcopy(
         result.get("transitions") if isinstance(result.get("transitions"), list) else []
@@ -247,6 +253,7 @@ def new_cultivation(
     start_date: str,
     identity: dict[str, Any],
     plan: list[dict[str, Any]],
+    system_snapshot: dict[str, Any] | None = None,
     cultivation_id: str | None = None,
     timestamp: str | None = None,
 ) -> dict[str, Any]:
@@ -261,6 +268,7 @@ def new_cultivation(
         "id": record_id,
         "name": str(name or f"Yetiştirme · {start_date}")[:80],
         "identity": normalize_identity(identity),
+        "system_snapshot": _bounded_json(system_snapshot or {}),
         "start_date": start_date,
         "started_at": timestamp,
         "completed_at": "",
@@ -310,7 +318,10 @@ def start_cultivation(
             cultivation_id=record_id,
             local_date=record["start_date"],
             note=record["name"],
-            data={"identity": record["identity"]},
+            data={
+                "identity": record["identity"],
+                "system_snapshot": record.get("system_snapshot", {}),
+            },
             created_by=created_by,
             created_at=record["started_at"],
         ),

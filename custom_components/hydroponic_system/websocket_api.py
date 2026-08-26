@@ -3,16 +3,31 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from .const import CONTROL_KEYS, DEFAULT_CULTIVATION_PLAN, DEFAULT_DOSING_POLICY, DOMAIN, SENSOR_KEYS, STAGE_ORDER
 from .entity_map import resolve_entities
-from .journal import USER_EVENT_TYPES, empty_cultivation_view, new_cultivation
+from .grow_profile import (
+    assistant_context_summary,
+    build_assistant_prompt,
+    normalize_assistant_settings,
+    normalize_sensor_summaries,
+    normalize_system_profile,
+    system_profile_completeness,
+)
+from .journal import (
+    USER_EVENT_TYPES,
+    empty_cultivation_view,
+    events_for_cultivation,
+    new_cultivation,
+)
 from .readiness import cultivation_readiness
 
 
@@ -41,6 +56,18 @@ async def websocket_get_config(hass, connection, msg) -> None:
         entities, store.data.get("hardware", {}), _live_atlas_drivers(atlas)
     )
     cultivation = store.active_cultivation or empty_cultivation_view()
+    cultivation_events = events_for_cultivation(
+        store.data, cultivation.get("id") if cultivation.get("active") else None
+    )
+    providers = [
+        {
+            "id": state.entity_id,
+            "name": state.name,
+            "available": state.state not in {"unavailable", "unknown"},
+        }
+        for state in hass.states.async_all()
+        if state.domain == "ai_task"
+    ]
     connection.send_result(
         msg["id"],
         {
@@ -53,6 +80,24 @@ async def websocket_get_config(hass, connection, msg) -> None:
             "entities": entities,
             "configured_entities": configured,
             "cultivation_readiness": readiness,
+            "system_profile_status": system_profile_completeness(
+                store.data.get("system_profile")
+            ),
+            "assistant": {
+                "providers": providers,
+                "generate_service_available": hass.services.has_service(
+                    "ai_task", "generate_data"
+                ),
+                "context": assistant_context_summary(
+                    cultivation=cultivation,
+                    system_profile=(
+                        cultivation.get("system_snapshot")
+                        or store.data.get("system_profile")
+                    ),
+                    sensor_summaries=[],
+                    recent_events=cultivation_events,
+                ),
+            },
             "hardware": {
                 "atlas_i2c": atlas.diagnostic if atlas is not None else {
                     "available": False,
@@ -115,6 +160,163 @@ async def websocket_save_profile(hass, connection, msg) -> None:
                 await store.async_save()
                 break
     connection.send_result(msg["id"], profile)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "hydroponic_system/system_profile/save",
+        vol.Required("values"): dict,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_save_system_profile(hass, connection, msg) -> None:
+    """Persist the simple cabin, water-system, and lighting profile."""
+    store = hass.data[DOMAIN]["store"]
+    profile = await store.async_update_system_profile(msg["values"])
+    connection.send_result(
+        msg["id"],
+        {"profile": profile, "status": system_profile_completeness(profile)},
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "hydroponic_system/assistant/settings/save",
+        vol.Required("values"): dict,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_save_assistant_settings(hass, connection, msg) -> None:
+    """Persist generate-only assistant preferences."""
+    settings = normalize_assistant_settings(msg["values"])
+    provider = settings["provider_entity_id"]
+    if provider and hass.states.get(provider) is None:
+        connection.send_error(
+            msg["id"], "provider_not_found", "Selected AI Task provider was not found"
+        )
+        return
+    saved = await hass.data[DOMAIN]["store"].async_update_assistant_settings(settings)
+    connection.send_result(msg["id"], saved)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "hydroponic_system/assistant/generate",
+        vol.Optional("sensor_summaries", default=[]): list,
+        vol.Optional("event_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_generate_assistant_report(hass, connection, msg) -> None:
+    """Generate and journal one read-only report through Home Assistant AI Task."""
+    store = hass.data[DOMAIN]["store"]
+    cultivation = store.active_cultivation
+    if cultivation is None:
+        connection.send_error(
+            msg["id"], "no_active_cultivation", "Start a cultivation before using Assistant"
+        )
+        return
+    settings = normalize_assistant_settings(store.data.get("assistant_settings"))
+    provider = settings["provider_entity_id"]
+    if not provider:
+        connection.send_error(
+            msg["id"], "provider_required", "Select a Home Assistant AI Task provider"
+        )
+        return
+    if hass.states.get(provider) is None:
+        connection.send_error(msg["id"], "provider_not_found", "AI Task provider is unavailable")
+        return
+    if not hass.services.has_service("ai_task", "generate_data"):
+        connection.send_error(msg["id"], "service_unavailable", "AI Task service is unavailable")
+        return
+
+    sensor_summaries = normalize_sensor_summaries(msg.get("sensor_summaries"))
+    cultivation_events = events_for_cultivation(store.data, cultivation["id"])
+    stage = store.data.get("active_stage")
+    prompt = build_assistant_prompt(
+        cultivation=cultivation,
+        active_stage=stage,
+        active_profile=store.data.get("profiles", {}).get(stage) if stage else None,
+        system_profile=store.data.get("system_profile"),
+        sensor_summaries=sensor_summaries,
+        recent_events=cultivation_events,
+        settings=settings,
+    )
+    service_data = {
+        "entity_id": provider,
+        "task_name": "Hydroponic System günlük yetiştirme özeti",
+        "instructions": prompt,
+    }
+    if settings["allow_photos"]:
+        configured_cameras = hass.data[DOMAIN].get("entities", {}).get("cameras", [])
+        if isinstance(configured_cameras, str):
+            configured_cameras = [configured_cameras]
+        camera_ids = [
+            entity_id
+            for entity_id in configured_cameras
+            if isinstance(entity_id, str) and entity_id.startswith("camera.")
+        ][:3]
+        if camera_ids:
+            service_data["attachments"] = [
+                {
+                    "media_content_id": f"media-source://camera/{entity_id}",
+                    "media_content_type": "image/jpeg",
+                }
+                for entity_id in camera_ids
+            ]
+    try:
+        response = await hass.services.async_call(
+            "ai_task",
+            "generate_data",
+            service_data,
+            blocking=True,
+            context=connection.context(msg),
+            return_response=True,
+        )
+        generated = response.get("data") if isinstance(response, dict) else response
+        if isinstance(generated, dict):
+            generated = json.dumps(generated, ensure_ascii=False)
+        report = str(generated or "").strip()
+        context_summary = assistant_context_summary(
+            cultivation=cultivation,
+            system_profile=cultivation.get("system_snapshot") or store.data.get("system_profile"),
+            sensor_summaries=sensor_summaries,
+            recent_events=cultivation_events,
+        )
+        event = await store.async_append_assistant_recommendation(
+            note=report,
+            provider_entity_id=provider,
+            context_summary=context_summary,
+            created_by=str(getattr(connection.user, "id", "")),
+            event_id=msg.get("event_id"),
+        )
+        if settings["notifications"]:
+            await hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "title": "Hydroponic System · Grow Assistant",
+                    "message": report,
+                    "notification_id": "hydroponic_system_grow_assistant",
+                },
+                blocking=True,
+                context=connection.context(msg),
+            )
+    except (HomeAssistantError, TypeError, ValueError) as err:
+        connection.send_error(msg["id"], "assistant_failed", str(err))
+        return
+    connection.send_result(
+        msg["id"],
+        {
+            "report": report,
+            "event": event,
+            "read_only": True,
+            "provider_entity_id": provider,
+        },
+    )
 
 
 @websocket_api.websocket_command(
@@ -192,6 +394,9 @@ async def websocket_start_cultivation(hass, connection, msg) -> None:
             start_date=start_date,
             identity=msg.get("identity", {}),
             plan=plan,
+            system_snapshot=normalize_system_profile(
+                store.data.get("system_profile")
+            ),
             cultivation_id=msg.get("cultivation_id"),
         )
         if not cultivation["identity"]["plant_species"]:
@@ -645,6 +850,9 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_get_config)
     websocket_api.async_register_command(hass, websocket_save_entities)
     websocket_api.async_register_command(hass, websocket_save_profile)
+    websocket_api.async_register_command(hass, websocket_save_system_profile)
+    websocket_api.async_register_command(hass, websocket_save_assistant_settings)
+    websocket_api.async_register_command(hass, websocket_generate_assistant_report)
     websocket_api.async_register_command(hass, websocket_select_stage)
     websocket_api.async_register_command(hass, websocket_start_cultivation)
     websocket_api.async_register_command(hass, websocket_finish_cultivation)

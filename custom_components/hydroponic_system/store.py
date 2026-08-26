@@ -16,9 +16,16 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
 )
+from .grow_profile import (
+    DEFAULT_ASSISTANT_SETTINGS,
+    DEFAULT_SYSTEM_PROFILE,
+    normalize_assistant_settings,
+    normalize_system_profile,
+)
 from .journal import (
     JOURNAL_SCHEMA_VERSION,
     active_cultivation,
+    append_event,
     calendar_journal,
     cultivation_summaries,
     empty_cultivations,
@@ -53,6 +60,8 @@ class HydroponicSystemStore:
             "active_stage": None,
             "engine_enabled": False,
             "profiles": deepcopy(DEFAULT_PROFILES),
+            "system_profile": deepcopy(DEFAULT_SYSTEM_PROFILE),
+            "assistant_settings": deepcopy(DEFAULT_ASSISTANT_SETTINGS),
             "cultivations": empty_cultivations(),
             "events": [],
             "hardware": {
@@ -80,6 +89,17 @@ class HydroponicSystemStore:
         migrated = not bool(stored)
         self.data["active_stage"] = stored.get("active_stage")
         self.data["engine_enabled"] = stored.get("engine_enabled", False)
+        self.data["system_profile"] = normalize_system_profile(
+            stored.get("system_profile")
+        )
+        self.data["assistant_settings"] = normalize_assistant_settings(
+            stored.get("assistant_settings")
+        )
+        if (
+            self.data["system_profile"] != stored.get("system_profile")
+            or self.data["assistant_settings"] != stored.get("assistant_settings")
+        ):
+            migrated = True
         stored_profiles = stored.get("profiles", {})
         for stage, defaults in DEFAULT_PROFILES.items():
             self.data["profiles"][stage].update(stored_profiles.get(stage, {}))
@@ -252,6 +272,52 @@ class HydroponicSystemStore:
         await self.async_save()
         return event
 
+    async def async_append_assistant_recommendation(
+        self,
+        *,
+        note: str,
+        provider_entity_id: str,
+        context_summary: dict[str, Any],
+        created_by: str = "",
+        event_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one generate-only assistant response to the active journal."""
+        cultivation = self.active_cultivation
+        if cultivation is None:
+            raise ValueError("There is no active cultivation")
+        clean_note = str(note or "").strip()[:4000]
+        if not clean_note:
+            raise ValueError("Assistant response is empty")
+        if event_id:
+            existing = next(
+                (item for item in self.data.get("events", []) if item.get("id") == event_id),
+                None,
+            )
+            if existing is not None:
+                if existing.get("cultivation_id") != cultivation["id"]:
+                    raise ValueError("Assistant event id belongs to another cultivation")
+                return deepcopy(existing)
+        timestamp = utc_now()
+        event = make_event(
+            event_type="ai_recommendation",
+            cultivation_id=cultivation["id"],
+            local_date=timestamp[:10],
+            note=clean_note,
+            data={
+                "provider_entity_id": str(provider_entity_id)[:160],
+                "context": context_summary,
+                "read_only": True,
+            },
+            source="assistant",
+            created_by=created_by,
+            event_id=event_id,
+            created_at=timestamp,
+        )
+        append_event(self.data, event)
+        cultivation["updated_at"] = timestamp
+        await self.async_save()
+        return event
+
     def export_journal(self) -> dict[str, Any]:
         """Build a complete checksummed export suitable for off-device backup."""
         payload = {
@@ -260,6 +326,7 @@ class HydroponicSystemStore:
             "generated_at": utc_now(),
             "cultivations": deepcopy(self.data.get("cultivations", empty_cultivations())),
             "events": deepcopy(self.data.get("events", [])),
+            "current_system_profile": deepcopy(self.data.get("system_profile", {})),
         }
         return {**payload, "checksum": journal_checksum(payload)}
 
@@ -288,6 +355,20 @@ class HydroponicSystemStore:
         self.data["profiles"][stage].update(updates)
         await self.async_save()
         return self.data["profiles"][stage]
+
+    async def async_update_system_profile(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Persist the user's cabin, water-system, and lighting profile."""
+        self.data["system_profile"] = normalize_system_profile(values)
+        await self.async_save()
+        return deepcopy(self.data["system_profile"])
+
+    async def async_update_assistant_settings(
+        self, values: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Persist generate-only assistant preferences."""
+        self.data["assistant_settings"] = normalize_assistant_settings(values)
+        await self.async_save()
+        return deepcopy(self.data["assistant_settings"])
 
     async def async_update_hardware(self, values: dict[str, Any]) -> dict[str, Any]:
         """Persist validated native hardware preferences."""

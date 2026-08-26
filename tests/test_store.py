@@ -136,3 +136,24 @@ def test_store_removes_the_old_unmeasured_one_ml_placeholder():
 
     assert channel["calibration"] is None
     assert channel["calibration_status"] == "unverified"
+
+
+def test_store_migrates_and_persists_product_profiles_without_losing_journal():
+    FakeStore.documents = {
+        const.STORAGE_KEY: {
+            "events": [{"id": "keep_me", "cultivation_id": None}],
+            "system_profile": {"cabin": {"name": "My cabinet"}},
+            "assistant_settings": {
+                "provider_entity_id": "ai_task.local",
+                "read_only": False,
+            },
+        }
+    }
+
+    store = store_module.HydroponicSystemStore(object())
+    asyncio.run(store.async_load())
+
+    assert store.data["system_profile"]["cabin"]["name"] == "My cabinet"
+    assert store.data["assistant_settings"]["provider_entity_id"] == "ai_task.local"
+    assert store.data["assistant_settings"]["read_only"] is True
+    assert any(event["id"] == "keep_me" for event in store.data["events"])

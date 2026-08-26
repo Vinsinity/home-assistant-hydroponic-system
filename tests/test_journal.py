@@ -36,6 +36,10 @@ def _record(record_id: str, start_date: str):
             "reservoir_volume_l": 80,
         },
         plan=[{"stage": "germination", "planned_days": 6}],
+        system_snapshot={
+            "cabin": {"name": "Cabinet A"},
+            "lighting": {"model": "Fixture 1"},
+        },
         cultivation_id=record_id,
         timestamp=f"{start_date}T08:00:00+00:00",
     )
@@ -67,6 +71,15 @@ def test_new_cultivation_never_replaces_finished_history():
     assert data["cultivations"]["order"] == ["grow_one", "grow_two"]
     assert data["cultivations"]["records"]["grow_one"] == first_snapshot
     assert first_event_ids <= {event["id"] for event in data["events"]}
+
+
+def test_cultivation_keeps_its_system_snapshot_in_record_and_start_event():
+    data = _data()
+    record = journal.start_cultivation(data, _record("grow", "2026-08-01"))
+
+    assert record["system_snapshot"]["cabin"]["name"] == "Cabinet A"
+    started = next(event for event in data["events"] if event["type"] == "cultivation_started")
+    assert started["data"]["system_snapshot"] == record["system_snapshot"]
 
 
 def test_events_are_append_only_and_duplicate_ids_are_rejected():
