@@ -13,11 +13,13 @@ its local API without Home Assistant being installed or reachable.
 
 ## Initial runtime
 
-The first standalone slice intentionally contains no equipment command API.
-It provides:
+The standalone product intentionally contains no equipment command API yet. It
+provides:
 
 - a Python service with no Home Assistant runtime dependency;
-- a versioned HTTP health and read-only data API;
+- an authenticated local web panel and versioned mutation/read API;
+- cultivation start, stage transition, finish, custom-species, system setup,
+  and append-only journal application services;
 - SQLite WAL storage with `synchronous=FULL`;
 - immutable journal-event rows enforced by SQLite triggers;
 - immutable full-state revisions for recovery;
@@ -32,10 +34,10 @@ discard cultivation records or events.
 ## Runtime layout
 
 ```text
-Browser
+Browser (Today / Journal / Setup)
   │
   ▼
-GrowAsist local API and future web UI
+GrowAsist local API and web panel
   ├── cultivation/profile service
   ├── append-only journal store
   ├── sensor history service
@@ -69,8 +71,9 @@ off-device backups remain mandatory.
 
 ## Delivery order
 
-1. Standalone core, durable storage, HA export import, health API.
+1. Standalone core, durable storage, HA export import, health API. **Complete.**
 2. Standalone web shell, authentication, setup flow, cultivation and journal UI.
+   **Usable first slice complete.**
 3. Device registry plus native Shelly discovery and monitoring.
 4. Atlas EZO/PCA9685 hardware gateway and sensor history.
 5. Tapo and qualified Tuya-local adapters; Home Assistant adapter for remaining

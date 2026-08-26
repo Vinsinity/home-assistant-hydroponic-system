@@ -14,7 +14,7 @@ cp .env.example .env
 openssl rand -hex 32
 ```
 
-Put the generated value in `.env`, then start the read-only core:
+Put the generated value in `.env`, then start GrowAsist:
 
 ```sh
 mkdir -p growasist-data
@@ -24,9 +24,14 @@ docker compose ps
 curl http://127.0.0.1:8080/api/v1/health
 ```
 
-The browser landing page is available at `http://<raspberry-pi-ip>:8080`. The
-API endpoints containing cultivation data require `Authorization: Bearer
-<token>`.
+The standalone panel is available at `http://<raspberry-pi-ip>:8080`. Enter the
+same token in the sign-in screen; it remains only in that browser tab's session
+storage. API endpoints containing cultivation data require `Authorization:
+Bearer <token>`.
+
+The panel can start and finish cultivations, append journal events, change the
+active stage, and save grow-area/media/light context. It does not send commands
+to lights, pumps, humidifiers, or dosing hardware.
 
 The persistent database is stored in `./growasist-data`. Back it up to another
 disk or host; merely recreating the container must not remove this directory.

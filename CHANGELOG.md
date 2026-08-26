@@ -8,6 +8,15 @@
   event rows, immutable state revisions, checksum validation, and online backup.
 - Add checksummed Home Assistant journal import that merges historical records
   and events instead of replacing them.
+- Add an authenticated, responsive standalone web panel with focused Today,
+  Journal, and Setup workspaces and no Home Assistant frontend components.
+- Add standalone application services and API routes for starting/finishing a
+  cultivation, stage transitions, custom plants, physical setup, and immutable
+  journal events.
+- Snapshot the selected Plant Library profile, Cannabis genetics, method,
+  growing medium, fixture context, and nutrient-program name at grow start.
+- Validate the complete browser flow on desktop and mobile while keeping all
+  automatic equipment control disabled.
 - Keep the automatic control engine disabled while standalone device adapters
   and deterministic safety rules are built.
 

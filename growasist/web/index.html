@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>GrowAsist</title>
+    <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/app.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell" data-app hidden>
+      <aside class="rail">
+        <a class="brand" href="#today" aria-label="GrowAsist ana sayfa">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span><b>GrowAsist</b><small>Yerel yetiştirme sistemi</small></span>
+        </a>
+        <nav aria-label="Ana bölümler">
+          <button class="nav-item active" data-view="today">
+            <span class="nav-icon">⌂</span><span>Bugün</span>
+          </button>
+          <button class="nav-item" data-view="journal">
+            <span class="nav-icon">▤</span><span>Günlük</span>
+          </button>
+          <button class="nav-item" data-view="setup">
+            <span class="nav-icon">◇</span><span>Kurulum</span>
+          </button>
+        </nav>
+        <div class="rail-foot">
+          <span class="local-seal"><i></i> Raspberry Pi üzerinde</span>
+          <button class="text-button" data-lock>Oturumu kilitle</button>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <span class="kicker" data-view-kicker>YETİŞTİRME MERKEZİ</span>
+            <h1 data-view-title>Bugün</h1>
+          </div>
+          <div class="system-state">
+            <span class="status-dot"></span>
+            <span><b>Yerel sistem çevrimiçi</b><small>Home Assistant kullanılmıyor</small></span>
+          </div>
+        </header>
+        <section class="view" data-view-content aria-live="polite"></section>
+      </main>
+    </div>
+
+    <section class="auth-gate" data-auth-gate>
+      <div class="auth-waterline" aria-hidden="true"><i></i></div>
+      <div class="auth-panel">
+        <span class="brand-mark large" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="kicker">RASPBERRY PI · YEREL ERİŞİM</span>
+        <h1>Yetiştirme alanına gir</h1>
+        <p>Kurulum sırasında oluşturduğunuz erişim anahtarını girin. Anahtar bu tarayıcı sekmesi kapandığında silinir.</p>
+        <form data-auth-form>
+          <label><span>Erişim anahtarı</span><input name="token" type="password" autocomplete="current-password" required></label>
+          <button class="primary-button" type="submit">Sisteme bağlan</button>
+          <small class="form-message" data-auth-message></small>
+        </form>
+      </div>
+    </section>
+
+    <dialog class="dialog" data-dialog>
+      <form method="dialog" class="dialog-shell" data-dialog-form>
+        <header><div><span class="kicker" data-dialog-kicker></span><h2 data-dialog-title></h2></div><button class="icon-button" type="button" data-dialog-close aria-label="Kapat">×</button></header>
+        <div class="dialog-body" data-dialog-body></div>
+        <footer data-dialog-actions></footer>
+      </form>
+    </dialog>
+
+    <div class="toast" data-toast role="status" aria-live="polite"></div>
+  </body>
+</html>

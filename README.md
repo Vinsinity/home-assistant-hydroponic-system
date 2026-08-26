@@ -1,13 +1,23 @@
-# Hydroponic System
+# GrowAsist
 
 Standalone Raspberry Pi grow system in development, with the existing Home
 Assistant integration retained as a compatible adapter during migration.
 
 ## Standalone Raspberry Pi core
 
-The repository now includes the first Home Assistant-independent core slice:
+The repository now includes a usable Home Assistant-independent product slice:
 
-- `growasist serve` starts a local, read-only HTTP service;
+- `growasist serve` starts the authenticated local web panel and API;
+- the **Today** workspace starts and tracks a cultivation from the persistent
+  Plant Library, including custom plant species and the versioned Cannabis
+  cultivar catalog;
+- the grow-start flow snapshots plant/genetics, editable example targets,
+  method, growing medium, light fixture context, and nutrient-program name;
+- the append-only **Journal** records water, nutrients, pH, reservoir work,
+  maintenance, calibration, stage changes, and notes without exposing update or
+  delete operations;
+- **Setup** stores physical grow area, method/media, solution volumes, and light
+  fixture identity without pretending manually typed values are live controls;
 - SQLite WAL storage keeps immutable journal events and full state revisions;
 - checksummed exports from the current Home Assistant panel can be merged with
   `growasist import-ha` without treating missing events as deletions;
@@ -19,7 +29,12 @@ See [the standalone architecture](docs/STANDALONE_ARCHITECTURE.md) and
 [Raspberry Pi development guide](docs/RASPBERRY_PI.md). Automatic equipment
 control remains disabled in this slice.
 
-## Current scope (0.32.0)
+Open `http://<raspberry-pi-ip>:8080`, enter the token from `.env`, and use the
+panel directly. Home Assistant is not required by this runtime. Automatic
+equipment control and LAN discovery are deliberately still disabled until the
+native device adapters and deterministic safety layer are implemented.
+
+## Existing Home Assistant adapter (0.32.0)
 
 ### Grow tracking and Assistant
 

@@ -22,3 +22,4 @@ namespaces = true
 
 [tool.setuptools.package-data]
 "custom_components.hydroponic_system" = ["data/*.json"]
+"growasist.web" = ["*.html", "*.css", "*.js", "*.svg"]

@@ -1,4 +1,4 @@
-"""Small read-only HTTP surface for the first standalone core slice."""
+"""Authenticated HTTP API and local web application for GrowAsist Core."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from copy import deepcopy
 import hmac
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import resources
 import json
 import signal
 from typing import Any
@@ -14,18 +15,8 @@ from urllib.parse import urlsplit
 from custom_components.hydroponic_system.journal import active_cultivation
 
 from . import __version__
+from .service import GrowAsistService
 from .storage import GrowAsistStore
-
-
-_LANDING_PAGE = """<!doctype html>
-<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>GrowAsist Core</title><style>
-body{margin:0;background:#101310;color:#eef3ee;font:16px/1.5 system-ui,sans-serif}main{max-width:720px;margin:12vh auto;padding:32px}
-small{color:#91a094}code{color:#58c7a2}section{margin-top:28px;padding-top:22px;border-top:1px solid #29312b}
-</style></head><body><main><small>RASPBERRY PI · STANDALONE CORE</small><h1>GrowAsist çalışıyor</h1>
-<p>Bu ilk çekirdek dilimi Home Assistant olmadan çalışır. Otomatik ekipman kontrolü kapalıdır.</p>
-<section><b>Sağlık kontrolü</b><p><code>GET /api/v1/health</code></p>
-<small>Yetiştirme verileri kimlik doğrulaması olmadan yayınlanmaz.</small></section></main></body></html>"""
 
 
 def _system_summary(state: dict[str, Any]) -> dict[str, Any]:
@@ -42,8 +33,18 @@ def _system_summary(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_handler(store: GrowAsistStore, api_token: str):
+def build_handler(
+    store: GrowAsistStore, api_token: str, service: GrowAsistService | None = None
+):
     """Create a request handler bound to one store and token."""
+    application = service or GrowAsistService(store)
+    web_root = resources.files("growasist.web")
+    assets = {
+        "/": (web_root / "index.html", "text/html; charset=utf-8"),
+        "/assets/app.css": (web_root / "app.css", "text/css; charset=utf-8"),
+        "/assets/app.js": (web_root / "app.js", "text/javascript; charset=utf-8"),
+        "/assets/icon.svg": (web_root / "icon.svg", "image/svg+xml"),
+    }
 
     class GrowAsistHandler(BaseHTTPRequestHandler):
         server_version = "GrowAsistCore"
@@ -57,6 +58,13 @@ def build_handler(store: GrowAsistStore, api_token: str):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; script-src 'self'; style-src 'self'; "
+                "connect-src 'self'; img-src 'self' data:; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+            )
             self.end_headers()
             self.wfile.write(body)
 
@@ -69,15 +77,36 @@ def build_handler(store: GrowAsistStore, api_token: str):
             expected = f"Bearer {api_token}"
             return bool(api_token) and hmac.compare_digest(supplied, expected)
 
+        def _read_json(self) -> dict[str, Any]:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError as error:
+                raise ValueError("Geçersiz Content-Length") from error
+            if not 0 < length <= 1_048_576:
+                raise ValueError("İstek gövdesi boş veya çok büyük")
+            try:
+                value = json.loads(self.rfile.read(length))
+            except json.JSONDecodeError as error:
+                raise ValueError("Geçerli bir JSON nesnesi gönderin") from error
+            if not isinstance(value, dict):
+                raise ValueError("JSON gövdesi bir nesne olmalı")
+            return value
+
+        def _require_authorization(self) -> bool:
+            if self._authorized():
+                return True
+            self._send_json(
+                HTTPStatus.UNAUTHORIZED,
+                {"error": "Geçerli bir Bearer token gerekli"},
+            )
+            return False
+
         def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
             path = urlsplit(self.path).path
             try:
-                if path == "/":
-                    self._send_bytes(
-                        HTTPStatus.OK,
-                        _LANDING_PAGE.encode(),
-                        "text/html; charset=utf-8",
-                    )
+                if path in assets:
+                    asset, content_type = assets[path]
+                    self._send_bytes(HTTPStatus.OK, asset.read_bytes(), content_type)
                     return
                 if path == "/api/v1/health":
                     health = store.health()
@@ -91,11 +120,10 @@ def build_handler(store: GrowAsistStore, api_token: str):
                         public,
                     )
                     return
-                if not self._authorized():
-                    self._send_json(
-                        HTTPStatus.UNAUTHORIZED,
-                        {"error": "A valid Bearer token is required"},
-                    )
+                if not self._require_authorization():
+                    return
+                if path == "/api/v1/bootstrap":
+                    self._send_json(HTTPStatus.OK, application.bootstrap())
                     return
                 if path == "/api/v1/system":
                     self._send_json(HTTPStatus.OK, _system_summary(store.load_state()))
@@ -113,10 +141,36 @@ def build_handler(store: GrowAsistStore, api_token: str):
                 )
 
         def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
-            self._send_json(
-                HTTPStatus.METHOD_NOT_ALLOWED,
-                {"error": "The first standalone API slice is read-only"},
-            )
+            path = urlsplit(self.path).path
+            if not self._require_authorization():
+                return
+            try:
+                payload = self._read_json()
+                routes = {
+                    "/api/v1/cultivations/start": application.start_cultivation,
+                    "/api/v1/cultivations/finish": application.finish_cultivation,
+                    "/api/v1/cultivations/stage": application.select_stage,
+                    "/api/v1/journal/events": application.append_journal_event,
+                    "/api/v1/system-profile": application.update_system_profile,
+                }
+                operation = routes.get(path)
+                if operation is None:
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
+                    return
+                result = operation(payload)
+                self._send_json(HTTPStatus.OK, {"ok": True, "result": result})
+            except ValueError as error:
+                self._send_json(
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": type(error).__name__, "message": str(error)},
+                )
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            except Exception as error:
+                self._send_json(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    {"error": type(error).__name__, "message": str(error)},
+                )
 
         def log_message(self, message: str, *args: Any) -> None:
             print(f"{self.address_string()} - {message % args}")
@@ -132,10 +186,13 @@ def serve(
     api_token: str,
 ) -> None:
     """Run the standalone HTTP service until interrupted."""
-    if host not in {"127.0.0.1", "::1", "localhost"} and not api_token:
-        raise ValueError("A non-empty API token is required for LAN binding")
+    if not api_token:
+        raise ValueError("A non-empty API token is required")
     store.initialize()
-    server = ThreadingHTTPServer((host, port), build_handler(store, api_token))
+    service = GrowAsistService(store)
+    server = ThreadingHTTPServer(
+        (host, port), build_handler(store, api_token, service)
+    )
     server.daemon_threads = True
 
     def _request_stop(_signal_number: int, _frame: Any) -> None:
