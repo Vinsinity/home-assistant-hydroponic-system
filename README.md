@@ -2,13 +2,7 @@
 
 Home Assistant profile manager and dedicated control surface for a staged indoor grow system.
 
-## Current scope (0.26.1)
-
-- Normalizes mapped Home Assistant entities and enrolled Atlas I2C probes into one read-only sensor-health snapshot.
-- Reports source, value/unit, data age, unavailable/stale/suspect state, sudden spikes, multi-sensor divergence, calibration age, profile-target duration, and an explainable confidence score.
-- Shows a live Sensor Trust table in Overview and refreshes it every 30 seconds without issuing device commands.
-- Stores editable freshness thresholds and calibration dates while preserving the redundant append-only cultivation journal.
-- Never compares raw EC conductivity with a PPM profile target when the Atlas TDS channel is unavailable.
+## Current scope (0.25.0)
 
 - Stores every cultivation under a permanent unique ID; starting a new cultivation does not replace completed history.
 - Keeps an append-only event journal for stage transitions, notes, water work, nutrient/pH doses, reservoir volume, calibration, maintenance, photos, alarms, and future read-only assistant records.
@@ -58,7 +52,7 @@ The **Hydroponic System** panel is registered automatically. Monitoring through 
 
 Copy `custom_components/hydroponic_system` into Home Assistant's `config/custom_components` directory, restart Home Assistant, and add the integration from Settings → Devices & services.
 
-The profile editor, entity mappings, and sensor-health evaluator are intentionally separate from the control engine. Saving a profile, selecting a stage, adding a journal event, changing health settings, or mapping equipment in version 0.26.1 does not operate equipment.
+The profile editor and entity mappings are intentionally separate from the control engine. Saving a profile, selecting a stage, adding a journal event, or mapping equipment in version 0.25.0 does not operate equipment.
 
 ## Journal durability
 

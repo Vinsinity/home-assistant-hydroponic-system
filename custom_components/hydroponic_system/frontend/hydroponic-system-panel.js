@@ -36,10 +36,6 @@ class HydroponicSystemPanel extends HTMLElement {
     this._journalNotice = "";
     this._pendingCultivationId = null;
     this._pendingJournalEventId = null;
-    this._healthDraft = {default_stale_after_seconds:300,calibration_due_days:30,sensors:{}};
-    this._healthLoading = false;
-    this._lastHealthRefresh = 0;
-    this._healthTimer = null;
     this._calendarMonth = new Date(new Date().getFullYear(),new Date().getMonth(),1);
     this._onPopState = () => {
       const tab=this._tabFromPath(window.location.pathname);
@@ -59,8 +55,8 @@ class HydroponicSystemPanel extends HTMLElement {
     if(tab!==this._tab){this._tab=tab;this._notice="";this._render();}
   }
   set panel(value) { this._panel = value; }
-  connectedCallback() { window.addEventListener("popstate",this._onPopState);this._healthTimer=window.setInterval(()=>this._refreshSensorHealth(),30000);this._render(); }
-  disconnectedCallback() { window.removeEventListener("popstate",this._onPopState);if(this._healthTimer)window.clearInterval(this._healthTimer);this._healthTimer=null; }
+  connectedCallback() { window.addEventListener("popstate",this._onPopState);this._render(); }
+  disconnectedCallback() { window.removeEventListener("popstate",this._onPopState); }
 
   _tabFromPath(path) {
     const parts=String(path||"").split("/").filter(Boolean),panelIndex=parts.indexOf("hydroponic-system");
@@ -91,8 +87,6 @@ class HydroponicSystemPanel extends HTMLElement {
 
   async _reloadConfig() {
     this._config=await this._hass.connection.sendMessagePromise({type:"hydroponic_system/config/get"});
-    this._lastHealthRefresh=Date.now();
-    this._healthDraft=JSON.parse(JSON.stringify(this._config.sensor_health?.settings||this._config.sensor_health_settings||this._healthDraft));
     this._editingStage=this._config.active_stage||"germination";
     this._draft={...this._config.profiles[this._editingStage]};
     this._profileDrafts=Object.fromEntries(Object.entries(this._config.profiles).map(([stage,profile])=>[stage,{...profile}]));
@@ -103,8 +97,6 @@ class HydroponicSystemPanel extends HTMLElement {
     this._loading = true;
     try {
       this._config = await this._hass.connection.sendMessagePromise({type: "hydroponic_system/config/get"});
-      this._lastHealthRefresh=Date.now();
-      this._healthDraft=JSON.parse(JSON.stringify(this._config.sensor_health?.settings||this._config.sensor_health_settings||this._healthDraft));
       this._editingStage = this._config.active_stage || "germination";
       this._draft = {...this._config.profiles[this._editingStage]};
       this._profileDrafts = Object.fromEntries(Object.entries(this._config.profiles).map(([stage,profile])=>[stage,{...profile}]));
@@ -120,18 +112,6 @@ class HydroponicSystemPanel extends HTMLElement {
 
   _state(entityId) { return this._hass?.states?.[entityId]?.state; }
   _entityIds(value) { return Array.isArray(value) ? value : value ? [value] : []; }
-  _healthMeasurement(key) { return this._config?.sensor_health?.measurements?.[key] || null; }
-  async _refreshSensorHealth(force=false) {
-    if(!this._hass||!this._config||this._healthLoading||(!force&&Date.now()-this._lastHealthRefresh<25000))return;
-    this._healthLoading=true;
-    try{
-      const health=await this._hass.connection.sendMessagePromise({type:"hydroponic_system/sensor_health/get"});
-      this._config.sensor_health=health;this._lastHealthRefresh=Date.now();
-      if(this._tab!=="settings")this._healthDraft=JSON.parse(JSON.stringify(health.settings||this._healthDraft));
-      if(["overview","settings"].includes(this._tab))this._render();
-    }catch(_){/* The existing snapshot remains visible during a transient reconnect. */}
-    finally{this._healthLoading=false;}
-  }
   _reading(value) {
     if (value === "__vpd__") {
       const e = this._config?.entities || {};
@@ -210,37 +190,29 @@ class HydroponicSystemPanel extends HTMLElement {
     return {totalDay,stageDay,stagePlanned};
   }
 
-  _metricCard(label, icon, value, target, unit, precision=1, healthKey="") {
-    const health=this._healthMeasurement(healthKey),healthValue=health?.value===null||health?.value===undefined?NaN:Number(health.value),raw=Number.isFinite(healthValue)?healthValue:this._reading(value),valid = Number.isFinite(raw), hasTarget = Number.isFinite(Number(target));
-    const liveUnit=health?.unit||unit,statusLabels={ok:"Güvenilir",stale:"Bayat veri",unavailable:"Kullanılamıyor",suspect:"Şüpheli"},healthStatus=health?.status||"unavailable";
+  _metricCard(label, icon, value, target, unit, precision=1) {
+    const raw = this._reading(value), valid = Number.isFinite(raw), hasTarget = Number.isFinite(Number(target));
     const targetLabel = hasTarget ? `Hedef ${target} ${unit}` : "Aktif aşama hedefi yok";
-    const footer = !valid ? "Sensör eşleştirilmedi" : health?.target_comparable===false&&hasTarget ? `${liveUnit} değeri ${unit} hedefiyle karşılaştırılmadı` : hasTarget ? `${raw-target >= 0 ? "+" : ""}${(raw-target).toFixed(precision)} hedef farkı` : "Yalnızca canlı ölçüm";
-    return `<ha-card class="metric-card ${healthStatus}"><div class="metric-head"><ha-icon icon="${icon}"></ha-icon><div><span>${label}</span><small>${targetLabel}</small><em class="metric-health ${healthStatus}">${statusLabels[healthStatus]} · Güven ${health?.confidence??0}%</em></div>
-      <strong>${valid ? raw.toFixed(precision) : "—"}<i>${valid ? liveUnit : "Veri yok"}</i></strong></div>
+    const footer = !valid ? "Sensör eşleştirilmedi" : hasTarget ? `${raw-target >= 0 ? "+" : ""}${(raw-target).toFixed(precision)} hedef farkı` : "Yalnızca canlı ölçüm";
+    return `<ha-card class="metric-card"><div class="metric-head"><ha-icon icon="${icon}"></ha-icon><div><span>${label}</span><small>${targetLabel}</small></div>
+      <strong>${valid ? raw.toFixed(precision) : "—"}<i>${valid ? unit : "Veri yok"}</i></strong></div>
       ${value === "__vpd__" ? '<div class="no-history">Sıcaklık ve nemden canlı hesaplanıyor</div>' : this._sparkline(value)}
       <div class="chart-foot"><span>24 saat</span><span>${footer}</span></div></ha-card>`;
-  }
-
-  _duration(seconds){const value=Math.max(0,Number(seconds)||0);if(value<60)return `${Math.floor(value)} sn`;if(value<3600)return `${Math.floor(value/60)} dk`;if(value<86400)return `${Math.floor(value/3600)} sa`;return `${Math.floor(value/86400)} gün`;}
-  _sensorHealthOverview(){
-    const health=this._config?.sensor_health||{},summary=health.summary||{},measurements=Object.values(health.measurements||{}),statusLabels={ok:"Güvenilir",stale:"Bayat",unavailable:"Yok",suspect:"Şüpheli"},issueLabels={unavailable:"veri yok",invalid_value:"geçersiz değer",stale:"veri bayat",spike:"ani sıçrama",divergence:"sensör sapması",unit_mismatch:"birimler uyuşmuyor",calibration_unknown:"kalibrasyon tarihi yok",calibration_overdue:"kalibrasyon gecikmiş"};
-    const rows=measurements.map((item)=>{const issues=[...new Set((item.sources||[]).flatMap((source)=>source.issues||[]))],ages=(item.sources||[]).map((source)=>source.age_seconds).filter(Number.isFinite),age=ages.length?Math.min(...ages):null,target=item.target_outside?`Hedef dışında · ${this._duration(item.outside_duration_seconds)}`:item.target&&!item.target_comparable?"Hedef birimi farklı":item.target?"Profil aralığında":"Aktif hedef yok",hasValue=item.value!==null&&item.value!==undefined&&Number.isFinite(Number(item.value));return `<div class="health-row ${item.status} ${item.target_outside?"outside":""}"><span class="health-state"><i></i><span><b>${this._html(item.label)}</b><small>${item.available_count}/${item.source_count} kaynak · ${age===null?"yaş bilinmiyor":`${this._duration(age)} önce`}</small></span></span><span><small>Canlı değer</small><b>${hasValue?`${this._html(item.value)} ${this._html(item.unit)}`:"Veri yok"}</b></span><span><small>Durum</small><b>${statusLabels[item.status]||item.status}</b></span><span><small>Güven</small><b>${item.confidence}%</b></span><span><small>Profil karşılaştırması</small><b>${target}</b></span><span class="health-issues">${issues.length?issues.map((issue)=>`<em>${issueLabels[issue]||issue}</em>`).join(""):"Sorun saptanmadı"}</span></div>`;}).join("");
-    return `<ha-card class="sensor-health-card"><div class="health-head"><div><span class="eyebrow">Deterministik sensör sağlık katmanı</span><h2>Sensör güveni</h2><p>Bu görünüm salt okunurdur; hiçbir ekipmana komut göndermez.</p></div><div class="health-score ${summary.status||"attention"}"><strong>${summary.confidence??0}</strong><span>/ 100 güven<small>${summary.healthy_count||0} sağlıklı · ${summary.attention_count||0} dikkat</small></span></div></div><div class="health-kpis"><span><b>${summary.unavailable_count||0}</b><small>Kullanılamıyor</small></span><span><b>${summary.stale_count||0}</b><small>Bayat veri</small></span><span><b>${summary.suspect_count||0}</b><small>Şüpheli</small></span><span><b>${summary.target_outside_count||0}</b><small>Hedef dışında</small></span></div><div class="health-list">${rows||'<div class="security-empty">Henüz değerlendirilecek sensör kaynağı yok.</div>'}</div></ha-card>`;
   }
 
   _overview() {
     const e = this._config.entities || {};
     const stage = this._config?.cultivation?.active ? this._config.active_stage : null;
     const p = stage ? this._config?.profiles?.[stage] : null;
-    return `${this._sensorHealthOverview()}<section class="metric-grid">
-      ${this._metricCard("Sıcaklık","mdi:thermometer",e.temperature_sensors,p?.day_temperature,"°C",1,"temperature")}
-      ${this._metricCard("Nem","mdi:water-percent",e.humidity_sensors,p?.humidity,"%",1,"humidity")}
-      ${this._metricCard("VPD","mdi:gauge","__vpd__",p?.vpd,"kPa",2,"vpd")}
-      ${this._metricCard("CO₂","mdi:molecule-co2",e.co2_sensors,p?.co2,"ppm",0,"co2")}
-      ${this._metricCard("Besin","mdi:flash",e.ppm_sensor,p?.ppm,"ppm",0,"nutrient")}
-      ${this._metricCard("Su sıcaklığı","mdi:coolant-temperature",e.water_temperature_sensor,p?.water_temperature,"°C",1,"water_temperature")}
-      ${this._metricCard("pH","mdi:ph",e.ph_sensor,p?.ph,"pH",2,"ph")}
-      ${this._metricCard("Suda Çözünmüş Oksijen","mdi:chart-bubble",e.do_sensor,p?.do_minimum,"mg/L",2,"dissolved_oxygen")}
+    return `<section class="metric-grid">
+      ${this._metricCard("Sıcaklık","mdi:thermometer",e.temperature_sensors,p?.day_temperature,"°C")}
+      ${this._metricCard("Nem","mdi:water-percent",e.humidity_sensors,p?.humidity,"%")}
+      ${this._metricCard("VPD","mdi:gauge","__vpd__",p?.vpd,"kPa",2)}
+      ${this._metricCard("CO₂","mdi:molecule-co2",e.co2_sensors,p?.co2,"ppm",0)}
+      ${this._metricCard("Besin","mdi:flash",e.ppm_sensor,p?.ppm,"ppm",0)}
+      ${this._metricCard("Su sıcaklığı","mdi:coolant-temperature",e.water_temperature_sensor,p?.water_temperature,"°C")}
+      ${this._metricCard("pH","mdi:ph",e.ph_sensor,p?.ph,"pH",2)}
+      ${this._metricCard("Suda Çözünmüş Oksijen","mdi:chart-bubble",e.do_sensor,p?.do_minimum,"mg/L",2)}
     </section>`;
   }
 
@@ -499,11 +471,6 @@ class HydroponicSystemPanel extends HTMLElement {
     return `<div class="dosing-view"><ha-card class="dosing-policy-card"><div class="dosing-head"><div><span class="eyebrow">Dozaj karar sırası</span><h2>Besin → karıştırma → yeniden ölçüm → pH</h2><p>Besin verildikten sonra çözeltinin karışması beklenir; pH yalnız yeniden ölçümden sonra ve tek yönde düzeltilir.</p></div></div><div class="dosing-policy-grid">${field("nutrient_interval_minutes","Besin dozları arası","dk",30,1440)}${field("mixing_wait_minutes","Karıştırma beklemesi","dk",5,180)}${field("remeasure_wait_minutes","Yeniden ölçüm","dk",1,60)}${field("ph_interval_minutes","pH dozları arası","dk",10,360)}${field("ph_deadband","pH toleransı","pH",.02,1,.01)}${field("max_nutrient_dose_ml","Tek besin dozu üst sınırı","ml",.1,500,.1)}${field("max_ph_dose_ml","Tek pH dozu üst sınırı","ml",.1,50,.1)}</div><div class="policy-rule"><ha-icon icon="mdi:swap-horizontal-bold"></ha-icon><span><b>Tek yönlü pH güvenliği</b><small>Aynı karar çevriminde pH+ ve pH− birlikte çalıştırılmaz.</small></span></div></ha-card><ha-card class="dosing-map-card"><div class="dosing-head"><div><span class="eyebrow">Pompa eşlemesi</span><h2>Dozaj</h2><p>Motor kanallarını besin ve düzenleyici sıvılarla eşleştirin.</p></div></div><div class="dosing-map-list">${rows||'<div class="security-empty">Önce Donanım bölümünden bir motor sürücü ve pompalarını ekleyin.</div>'}</div><div class="card-actions"><span data-hardware-status>${this._hardwareNotice||""}</span><ha-button data-save-dosing appearance="filled">Dozaj ayarlarını kaydet</ha-button></div></ha-card></div>`;
   }
   _formatFlow(value){return new Intl.NumberFormat("tr-TR",{minimumFractionDigits:0,maximumFractionDigits:3}).format(Number(value)||0);}
-  _sensorHealthSettingsCard(){
-    const health=this._config?.sensor_health||{},draft=this._healthDraft||{},sensitive=new Set(["nutrient","water_temperature","ph","dissolved_oxygen"]),sources=Object.values(health.measurements||{}).flatMap((measurement)=>(measurement.sources||[]).map((source)=>({...source,measurement_key:measurement.key,measurement_label:measurement.label}))).filter((source)=>source.source!=="computed");
-    const rows=sources.map((source)=>{const saved=draft.sensors?.[source.id]||{},calibrated=(saved.calibrated_at||source.calibrated_at||"").slice(0,10),stale=saved.stale_after_seconds||source.stale_after_seconds||draft.default_stale_after_seconds||300;return `<div class="health-setting-row"><span><b>${this._html(source.name)}</b><small>${this._html(source.measurement_label)} · ${source.source==="native_i2c"?`Yerel I²C ${this._html(source.i2c_address||"")}`:this._html(source.entity_id||source.id)}</small></span><label><small>Bayat sayma eşiği</small><div><input data-health-stale="${this._html(source.id)}" type="number" min="30" max="86400" value="${stale}"><em>sn</em></div></label>${sensitive.has(source.measurement_key)?`<label><small>Son kalibrasyon</small><input data-health-calibration="${this._html(source.id)}" type="date" value="${this._html(calibrated)}"></label>`:'<span class="health-not-required"><small>Kalibrasyon</small><b>Takvim dışı</b></span>'}</div>`;}).join("");
-    return `<ha-card class="settings-card sensor-health-settings"><div class="settings-card-head"><ha-icon icon="mdi:shield-pulse-outline"></ha-icon><span><small>Ölçüm güveni</small><b>Sensör sağlığı ve kalibrasyon</b></span></div><div class="health-defaults"><label><span>Varsayılan veri yaşı eşiği</span><div><input data-health-default-stale type="number" min="30" max="86400" value="${draft.default_stale_after_seconds||300}"><small>sn</small></div></label><label><span>Kalibrasyon hatırlatma aralığı</span><div><input data-health-due-days type="number" min="1" max="3650" value="${draft.calibration_due_days||30}"><small>gün</small></div></label><p>Bu değerler yalnız güven puanı ve uyarı üretir; otomatik kontrol başlatmaz.</p></div><div class="health-settings-list">${rows||'<div class="security-empty">Önce izleme sensörlerini eşleştirin veya Atlas cihazlarını ekleyin.</div>'}</div><div class="card-actions"><span data-health-settings-status>${this._journalNotice||"Kalibrasyon tarihleri ana Home Assistant storage belgesinde saklanır."}</span><ha-button data-save-health-settings appearance="filled">Sağlık ayarlarını kaydet</ha-button></div></ha-card>`;
-  }
   _settingsView() {
     const head=(group,title,icon)=>`<div class="settings-card-head"><ha-icon icon="${icon}"></ha-icon><span><small>${group}</small><b>${title}</b></span></div>`;
     return `<div class="settings-grid"><ha-card class="settings-card">${head("Ölçüm","Ortam sensörleri","mdi:home-thermometer-outline")}<div class="card-content settings-list">
@@ -514,7 +481,7 @@ class HydroponicSystemPanel extends HTMLElement {
       ${this._selector("Yetiştirme ışığı","light")}${this._selector("CO₂ selenoid valfi","co2_valve")}${this._selector("Egzoz fanı","exhaust_fan")}${this._selector("Giriş fanı","inline_fan")}${this._selector("Su sirkülasyon pompası","rdwc_pump")}${this._selector("Klima","climate")}${this._selector("Nem alma cihazı","dehumidifier")}${this._selector("Nemlendirme cihazı","humidifier")}${this._selector("Su soğutucu","chiller")}
       </div></ha-card><ha-card class="settings-card">${head("Koruma","Güvenlik","mdi:shield-home-outline")}<div class="card-content settings-list">
       ${this._selector("Kameralar","cameras")}${this._selector("Su baskını sensörleri","leak_sensors")}
-      </div></ha-card>${this._sensorHealthSettingsCard()}<div class="settings-actions"><span data-status>${this._notice}</span><ha-button data-save-settings appearance="filled">Bağlantıları kaydet</ha-button></div></div>`;
+      </div></ha-card><div class="settings-actions"><span data-status>${this._notice}</span><ha-button data-save-settings appearance="filled">Bağlantıları kaydet</ha-button></div></div>`;
   }
 
   _pumpCatalog(){return [
@@ -573,22 +540,6 @@ class HydroponicSystemPanel extends HTMLElement {
       this._notice = "Bağlantılar kaydedildi";
       this._history = {}; this._render(); this._loadHistory();
     } catch (error) { this._notice = `Kaydedilemedi: ${error.message || error}`; this._updateNotice(); }
-  }
-
-  _wireSensorHealthSettings(){
-    const draft=this._healthDraft;draft.sensors||={};
-    const ensure=(id)=>draft.sensors[id]||(draft.sensors[id]={});
-    this.shadowRoot.querySelector("[data-health-default-stale]")?.addEventListener("input",(event)=>{draft.default_stale_after_seconds=Number(event.target.value);});
-    this.shadowRoot.querySelector("[data-health-due-days]")?.addEventListener("input",(event)=>{draft.calibration_due_days=Number(event.target.value);});
-    this.shadowRoot.querySelectorAll("[data-health-stale]").forEach((input)=>input.addEventListener("input",()=>{ensure(input.dataset.healthStale).stale_after_seconds=Number(input.value);}));
-    this.shadowRoot.querySelectorAll("[data-health-calibration]").forEach((input)=>input.addEventListener("input",()=>{ensure(input.dataset.healthCalibration).calibrated_at=input.value;}));
-    this.shadowRoot.querySelector("[data-save-health-settings]")?.addEventListener("click",()=>this._saveSensorHealthSettings());
-  }
-
-  async _saveSensorHealthSettings(){
-    const status=this.shadowRoot.querySelector("[data-health-settings-status]");if(status)status.textContent="Sağlık ayarları kaydediliyor…";
-    try{const settings=await this._hass.connection.sendMessagePromise({type:"hydroponic_system/sensor_health/settings/save",values:this._healthDraft});this._healthDraft=JSON.parse(JSON.stringify(settings));this._config.sensor_health_settings=settings;await this._refreshSensorHealth(true);this._journalNotice="Sensör sağlık ayarları kaydedildi.";this._render();}
-    catch(error){this._journalNotice=`Sağlık ayarları kaydedilemedi: ${error.message||error}`;this._render();}
   }
 
   _wireHardware() {
@@ -813,7 +764,7 @@ class HydroponicSystemPanel extends HTMLElement {
     await this._hass.connection.sendMessagePromise({type:"hydroponic_system/stage/select",stage:this._editingStage}); this._config.active_stage=this._editingStage; this._render();
   }
   _updateNotice(){const el=this.shadowRoot?.querySelector("[data-status]");if(el)el.textContent=this._notice;}
-  _refreshReadings(){if(this._tab==="overview"&&this._config)this._render();this._refreshSensorHealth();}
+  _refreshReadings(){if(this._tab==="overview"&&this._config)this._render();}
 
   _render() {
     if (!this.shadowRoot) return;
@@ -857,7 +808,7 @@ class HydroponicSystemPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll("[data-close-day]").forEach((button)=>button.addEventListener("click",()=>{this._selectedGrowDay=null;this._pendingJournalEventId=null;this._render();}));
     this.shadowRoot.querySelector("[data-day-scrim]")?.addEventListener("click",(event)=>{if(event.target===event.currentTarget){this._selectedGrowDay=null;this._pendingJournalEventId=null;this._render();}});
     this.shadowRoot.querySelector("[data-save-settings]")?.addEventListener("click",()=>this._saveSettings());
-    if(this._tab==="settings"){this._wireSelectors();this._wireSensorHealthSettings();}
+    if(this._tab==="settings")this._wireSelectors();
     if(this._tab==="hardware"){this._wireHardware();this._wireDeviceSettings();}
     if(this._tab==="nutrients")this._wireDosing();
     if(this._tab==="dosing")this._wireDosingMappings();
@@ -891,7 +842,6 @@ class HydroponicSystemPanel extends HTMLElement {
     .custom-pump-editor{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:14px 18px;border-top:1px solid var(--divider-color);border-bottom:1px solid var(--divider-color);background:color-mix(in srgb,var(--primary-color) 3%,var(--card-background-color))}.custom-pump-editor label{position:relative;display:grid;gap:5px}.custom-pump-editor label>span{color:var(--secondary-text-color);font-size:10px}.custom-pump-editor input[type="text"],.custom-pump-editor input[type="number"]{box-sizing:border-box;width:100%;height:42px;padding:0 11px;border:1px solid var(--divider-color);border-radius:6px;outline:0;color:var(--primary-text-color);background:var(--card-background-color);font:12px inherit}.custom-pump-editor label>small{position:absolute;right:10px;bottom:13px;color:var(--secondary-text-color);font-size:9px}.custom-pump-editor label:has(>small) input{padding-right:43px}.custom-pump-editor input:focus{border-color:var(--primary-color);box-shadow:0 0 0 1px var(--primary-color)}.custom-pump-check{display:flex!important;align-items:center;align-self:end;gap:8px;min-height:42px;color:var(--primary-text-color);font-size:11px}.custom-pump-check input{width:17px;height:17px;accent-color:var(--primary-color)}@media(max-width:700px){.custom-pump-editor{grid-template-columns:1fr 1fr}}
     .device-dialog .channel-fluid-field,.hardware-view .channel-line,.nutrients-view .dosing-readiness{display:none}.device-dialog .channel-mapping{grid-template-columns:1fr}.calibration-steps[hidden]{display:none!important}.calibration-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px 18px;border-top:1px solid var(--divider-color)}.calibration-summary span,.calibration-summary small,.calibration-summary b{display:block}.calibration-summary small{color:var(--secondary-text-color);font-size:10px}.calibration-summary b{margin-top:4px;font-size:13px}.calibration-summary button{padding:9px 13px;border:1px solid var(--primary-color);border-radius:18px;color:var(--primary-color);background:transparent;font:500 11px inherit;cursor:pointer}.dosing-map-card{overflow:hidden}.dosing-map-card>.dosing-head{padding:22px 24px}.dosing-map-list{display:grid}.dosing-map-row{display:grid;grid-template-columns:minmax(220px,1.2fr) 160px minmax(260px,1fr);align-items:center;gap:18px;min-height:82px;padding:14px 24px;border-bottom:1px solid var(--divider-color)}.dosing-map-row>span:first-child{display:flex;align-items:center;gap:12px}.dosing-map-row ha-icon{color:var(--state-icon-color)}.dosing-map-row span,.dosing-map-row small,.dosing-map-row b{display:block}.dosing-map-row small,.dosing-map-row label>span{color:var(--secondary-text-color);font-size:10px}.dosing-flow b{margin-top:4px;font-size:12px}.dosing-map-row label{display:grid;gap:5px}.dosing-map-row select{height:42px;padding:0 11px;border:1px solid var(--divider-color);border-radius:6px;color:var(--primary-text-color);background:var(--card-background-color);font:12px inherit}@media(max-width:760px){.dosing-map-row{grid-template-columns:1fr}.calibration-summary{align-items:flex-start;flex-direction:column}}
     .dosing-policy-card{margin-bottom:16px;overflow:hidden}.dosing-policy-card .dosing-head{padding:22px 24px}.dosing-policy-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:0 24px 20px}.dosing-policy-grid label{display:grid;gap:6px}.dosing-policy-grid label>span{color:var(--secondary-text-color);font-size:10px}.dosing-policy-grid label>div{position:relative}.dosing-policy-grid input{width:100%;height:42px;padding:0 45px 0 11px;border:1px solid var(--divider-color);border-radius:6px;color:var(--primary-text-color);background:var(--card-background-color);font:12px inherit}.dosing-policy-grid small{position:absolute;right:10px;top:14px;color:var(--secondary-text-color);font-size:9px}.policy-rule{display:flex;align-items:center;gap:11px;padding:14px 24px;border-top:1px solid var(--divider-color);background:var(--secondary-background-color)}.policy-rule span,.policy-rule small{display:block}.policy-rule small{margin-top:3px;color:var(--secondary-text-color);font-size:10px}@media(max-width:800px){.dosing-policy-grid{grid-template-columns:1fr 1fr}}
-    .sensor-health-card{margin-bottom:16px}.health-head{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 22px;border-bottom:1px solid var(--divider-color)}.health-head h2{margin:4px 0}.health-head p{margin:0;color:var(--secondary-text-color);font-size:11px}.health-score{display:flex;align-items:center;gap:8px;padding:10px 13px;border:1px solid var(--warning-color,#ff9800);border-radius:9px}.health-score.healthy{border-color:var(--success-color,#43a047)}.health-score strong{font-size:26px;font-weight:500}.health-score span,.health-score small{display:block}.health-score span{font-size:10px}.health-score small{margin-top:3px;color:var(--secondary-text-color);white-space:nowrap}.health-kpis{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--divider-color);background:var(--secondary-background-color)}.health-kpis span{padding:10px 16px;border-right:1px solid var(--divider-color)}.health-kpis span:last-child{border-right:0}.health-kpis b,.health-kpis small{display:block}.health-kpis b{font-size:17px}.health-kpis small{margin-top:2px;color:var(--secondary-text-color);font-size:9px}.health-list{display:grid}.health-row{display:grid;grid-template-columns:minmax(210px,1.3fr) minmax(100px,.6fr) 82px 65px minmax(150px,.9fr) minmax(160px,1fr);align-items:center;gap:14px;min-height:66px;padding:10px 18px;border-bottom:1px solid var(--divider-color)}.health-row:last-child{border-bottom:0}.health-row>span>small,.health-state small{display:block;margin-bottom:3px;color:var(--secondary-text-color);font-size:9px}.health-row>span>b{font-size:11px}.health-state{display:grid;grid-template-columns:9px 1fr;align-items:center;gap:10px}.health-state>i{width:9px;height:9px;border-radius:50%;background:var(--success-color,#43a047)}.health-row.stale .health-state>i,.health-row.suspect .health-state>i,.health-row.outside .health-state>i{background:var(--warning-color,#ff9800)}.health-row.unavailable .health-state>i{background:var(--error-color,#db4437)}.health-issues{display:flex!important;flex-wrap:wrap;gap:4px;color:var(--secondary-text-color);font-size:9px}.health-issues em{padding:3px 6px;border-radius:8px;background:var(--secondary-background-color);font-style:normal}.metric-health{display:block;width:max-content;margin-top:5px;padding:2px 6px;border-radius:8px;color:var(--success-color,#43a047);background:color-mix(in srgb,var(--success-color,#43a047) 10%,transparent);font-size:9px;font-style:normal}.metric-health.stale,.metric-health.suspect{color:var(--warning-color,#ff9800);background:color-mix(in srgb,var(--warning-color,#ff9800) 10%,transparent)}.metric-health.unavailable{color:var(--error-color,#db4437);background:color-mix(in srgb,var(--error-color,#db4437) 10%,transparent)}.sensor-health-settings{grid-column:1/-1}.health-defaults{display:grid;grid-template-columns:220px 220px 1fr;align-items:end;gap:14px;padding:16px 20px;border-bottom:1px solid var(--divider-color)}.health-defaults label,.health-setting-row label{display:grid;gap:5px}.health-defaults label>span,.health-setting-row label>small,.health-not-required small{color:var(--secondary-text-color);font-size:9px}.health-defaults label>div,.health-setting-row label>div{position:relative}.health-defaults input,.health-setting-row input{box-sizing:border-box;width:100%;height:40px;padding:0 42px 0 10px;border:1px solid var(--divider-color);border-radius:6px;color:var(--primary-text-color);background:var(--card-background-color)}.health-setting-row input[type="date"]{padding-right:8px}.health-defaults label small,.health-setting-row label em{position:absolute;right:10px;top:14px;color:var(--secondary-text-color);font-size:9px;font-style:normal}.health-defaults p{margin:0;color:var(--secondary-text-color);font-size:10px;line-height:1.5}.health-setting-row{display:grid;grid-template-columns:minmax(230px,1.4fr) 180px 180px;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid var(--divider-color)}.health-setting-row>span b,.health-setting-row>span small{display:block}.health-setting-row>span small{margin-top:3px;color:var(--secondary-text-color);font-size:9px}.health-not-required b{font-size:11px}@media(max-width:900px){.health-row{grid-template-columns:minmax(180px,1.3fr) repeat(3,minmax(70px,.5fr))}.health-row>span:nth-child(5),.health-issues{grid-column:2/-1}.health-defaults{grid-template-columns:1fr 1fr}.health-defaults p{grid-column:1/-1}}@media(max-width:650px){.health-head{align-items:flex-start;flex-direction:column}.health-score{width:100%}.health-kpis{grid-template-columns:1fr 1fr}.health-kpis span:nth-child(2){border-right:0}.health-kpis span:nth-child(-n+2){border-bottom:1px solid var(--divider-color)}.health-row{grid-template-columns:1fr 1fr}.health-state{grid-column:1/-1}.health-row>span:nth-child(5),.health-issues{grid-column:1/-1}.health-defaults,.health-setting-row{grid-template-columns:1fr}.health-defaults p{grid-column:auto}}
     .confirmation-scrim{z-index:1100}.confirmation-dialog{width:min(680px,100%)}.confirmation-lead{display:flex;align-items:flex-start;gap:14px;padding:16px;border:1px solid var(--divider-color);border-radius:10px;background:var(--secondary-background-color)}.confirmation-lead>ha-icon{flex:0 0 auto;color:var(--primary-color)}.confirmation-lead span,.confirmation-lead small{display:block}.confirmation-lead small{margin-top:5px;color:var(--secondary-text-color);font-size:12px;line-height:1.5}.confirmation-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:hidden;border:1px solid var(--divider-color);border-radius:9px}.confirmation-details span{padding:12px;border-right:1px solid var(--divider-color);border-bottom:1px solid var(--divider-color)}.confirmation-details span:nth-child(2n){border-right:0}.confirmation-details span:nth-last-child(-n+2){border-bottom:0}.confirmation-details small,.confirmation-details b{display:block}.confirmation-details small{color:var(--secondary-text-color);font-size:10px}.confirmation-details b{margin-top:4px;font-size:12px}.confirmation-dialog .dialog-actions{justify-content:flex-end}@media(max-width:600px){.confirmation-details{grid-template-columns:1fr}.confirmation-details span{border-right:0}.confirmation-details span:nth-last-child(-n+2){border-bottom:1px solid var(--divider-color)}.confirmation-details span:last-child{border-bottom:0}}
     .system-summary{display:flex;align-items:center;gap:8px}.summary-action{display:flex;align-items:center;gap:10px;min-width:168px;padding:10px 13px;border:1px solid var(--divider-color);border-radius:10px;color:var(--primary-text-color);background:var(--card-background-color);text-align:left;cursor:pointer}.summary-action:hover{border-color:var(--primary-color);background:var(--secondary-background-color)}.summary-action>ha-icon{color:var(--state-icon-color)}.summary-action span,.summary-action small{display:block}.summary-action b{font-size:12px;font-weight:600}.summary-action small{margin-top:2px;color:var(--secondary-text-color);font-size:10px}.system-dialog{width:min(780px,100%)}.mode-panel{display:flex;align-items:flex-start;gap:14px;padding:16px;border:1px solid var(--divider-color);border-radius:10px;background:var(--secondary-background-color)}.mode-panel>ha-icon{color:var(--primary-color)}.mode-panel span,.mode-panel small{display:block}.mode-panel small{margin-top:5px;color:var(--secondary-text-color);font-size:12px;line-height:1.5}.dialog-copy{margin:0;color:var(--secondary-text-color);font-size:12px;line-height:1.6}.connection-groups{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}.connection-groups section{overflow:hidden;border:1px solid var(--divider-color);border-radius:9px}.connection-groups h3{margin:0;padding:12px 13px;border-bottom:1px solid var(--divider-color);background:var(--secondary-background-color);font-size:13px}.connection-row{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--divider-color)}.connection-row:last-child{border-bottom:0}.connection-row ha-icon{--mdc-icon-size:17px;color:var(--secondary-text-color)}.connection-row.connected ha-icon{color:var(--success-color,#43a047)}.connection-row span{font-size:11px}.connection-row small{color:var(--secondary-text-color);font-size:9px}.connection-groups>.dialog-copy{grid-column:1/-1}@media(max-width:760px){.connection-groups{grid-template-columns:1fr}.system-summary{align-items:stretch;flex-direction:column}.summary-action{width:100%}}
     .summary-action.ready>ha-icon{color:var(--success-color,#43a047)}.summary-action.recommended>ha-icon,.connection-row.recommended-missing ha-icon{color:var(--primary-color)}.readiness-list{overflow:hidden;border:1px solid var(--divider-color);border-radius:9px}.all-connections{margin-top:4px}.all-connections summary{padding:12px 0;color:var(--primary-color);font-size:12px;cursor:pointer}.all-connections .connection-groups{display:grid;margin-top:8px}.mode-switch{display:flex;overflow:hidden;border:1px solid var(--divider-color);border-radius:10px;background:var(--card-background-color)}.mode-option{display:flex;align-items:center;gap:8px;padding:9px 12px;border:0;border-right:1px solid var(--divider-color);color:var(--secondary-text-color);background:transparent;text-align:left;cursor:pointer}.mode-option:last-child{border-right:0}.mode-option.active{color:var(--primary-color);background:color-mix(in srgb,var(--primary-color) 9%,var(--card-background-color))}.mode-option.locked{opacity:.72}.mode-option ha-icon{--mdc-icon-size:19px}.mode-option span,.mode-option small{display:block}.mode-option b{font-size:11px}.mode-option small{margin-top:2px;font-size:9px}.mode-panel.locked>ha-icon{color:var(--warning-color,#ff9800)}

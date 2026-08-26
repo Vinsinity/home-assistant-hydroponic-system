@@ -34,7 +34,6 @@ from .journal import (
     start_cultivation,
     utc_now,
 )
-from .sensor_health import DEFAULT_SENSOR_HEALTH_SETTINGS
 
 
 class HydroponicSystemStore:
@@ -56,7 +55,6 @@ class HydroponicSystemStore:
             "profiles": deepcopy(DEFAULT_PROFILES),
             "cultivations": empty_cultivations(),
             "events": [],
-            "sensor_health_settings": deepcopy(DEFAULT_SENSOR_HEALTH_SETTINGS),
             "hardware": {
                 "i2c_bus": 1,
                 "poll_interval": 30,
@@ -82,15 +80,6 @@ class HydroponicSystemStore:
         migrated = not bool(stored)
         self.data["active_stage"] = stored.get("active_stage")
         self.data["engine_enabled"] = stored.get("engine_enabled", False)
-        stored_health = stored.get("sensor_health_settings", {})
-        self.data["sensor_health_settings"].update(
-            stored_health if isinstance(stored_health, dict) else {}
-        )
-        if not isinstance(self.data["sensor_health_settings"].get("sensors"), dict):
-            self.data["sensor_health_settings"]["sensors"] = {}
-            migrated = True
-        if "sensor_health_settings" not in stored:
-            migrated = True
         stored_profiles = stored.get("profiles", {})
         for stage, defaults in DEFAULT_PROFILES.items():
             self.data["profiles"][stage].update(stored_profiles.get(stage, {}))
@@ -305,24 +294,3 @@ class HydroponicSystemStore:
         self.data["hardware"].update(values)
         await self.async_save()
         return self.data["hardware"]
-
-    async def async_update_sensor_health_settings(
-        self, values: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Persist validated sensor freshness and calibration metadata."""
-        self.data["sensor_health_settings"] = deepcopy(values)
-        await self.async_save()
-        return deepcopy(self.data["sensor_health_settings"])
-
-    async def async_record_sensor_calibration(
-        self, source_id: str, *, calibrated_at: str, operation: str = ""
-    ) -> None:
-        """Record a completed calibration action for health reporting."""
-        settings = self.data.setdefault(
-            "sensor_health_settings", deepcopy(DEFAULT_SENSOR_HEALTH_SETTINGS)
-        )
-        sensor = settings.setdefault("sensors", {}).setdefault(source_id, {})
-        sensor["calibrated_at"] = calibrated_at
-        if operation:
-            sensor["last_calibration_operation"] = operation
-        await self.async_save()
