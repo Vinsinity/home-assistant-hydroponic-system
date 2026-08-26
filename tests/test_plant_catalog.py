@@ -18,13 +18,31 @@ SPEC.loader.exec_module(plant_catalog)
 def test_default_catalog_contains_global_core_crops_and_cannabis():
     catalog = plant_catalog.default_plant_catalog()
 
-    assert catalog["schema_version"] == 1
+    assert catalog["schema_version"] == 2
     assert set(catalog["records"]) >= {
         "tomato", "lettuce", "cannabis", "basil", "strawberry", "pepper", "cucumber"
     }
     assert catalog["records"]["cannabis"]["botanical_name"] == "Cannabis sativa L."
     assert "Marijuana" in catalog["records"]["cannabis"]["aliases"]
     assert catalog["records"]["tomato"]["profile"]["kind"] == "editable_example"
+    assert set(catalog["breeders"]) >= {
+        "royal_queen_seeds", "barneys_farm", "amnesia_seeds"
+    }
+    cannabis = catalog["records"]["cannabis"]
+    assert {item["id"] for item in cannabis["growth_types"]} == {
+        "photoperiod", "autoflower"
+    }
+    assert any(
+        item["name"] == "Northern Light Auto"
+        and item["breeder_id"] == "royal_queen_seeds"
+        and item["growth_type"] == "autoflower"
+        for item in cannabis["cultivars"]
+    )
+    assert any(
+        item["name"] == "Purple Haze"
+        and item["breeder_id"] == "barneys_farm"
+        for item in cannabis["cultivars"]
+    )
 
 
 def test_catalog_migration_preserves_edits_and_adds_missing_defaults():
@@ -42,6 +60,64 @@ def test_catalog_migration_preserves_edits_and_adds_missing_defaults():
     assert catalog["records"]["my_plant"]["built_in"] is False
     assert "lettuce" in catalog["records"]
     assert catalog["order"][:2] == ["my_plant", "tomato"]
+    assert catalog["schema_version"] == 2
+    assert catalog["breeders"]["royal_queen_seeds"]["name"] == "Royal Queen Seeds"
+    assert len(catalog["records"]["cannabis"]["cultivars"]) >= 10
+
+
+def test_catalog_preserves_custom_breeder_and_custom_cultivar():
+    cannabis = deepcopy(plant_catalog.DEFAULT_PLANTS["cannabis"])
+    cannabis["cultivars"].append(
+        {
+            "id": "local_special",
+            "name": "Local Special",
+            "growth_type": "photoperiod",
+            "breeder_id": "local_breeder",
+            "active": True,
+        }
+    )
+    catalog = plant_catalog.normalize_plant_catalog(
+        {
+            "records": {"cannabis": cannabis},
+            "breeders": {
+                "local_breeder": {
+                    "name": "Local Breeder",
+                    "kind": "breeder",
+                    "website": "https://example.test",
+                }
+            },
+        }
+    )
+
+    assert catalog["breeders"]["local_breeder"]["built_in"] is False
+    custom = next(
+        item for item in catalog["records"]["cannabis"]["cultivars"]
+        if item["id"] == "local_special"
+    )
+    assert custom["name"] == "Local Special"
+    assert custom["built_in"] is False
+
+
+def test_builtin_cultivar_can_be_disabled_without_being_deleted():
+    cannabis = deepcopy(plant_catalog.DEFAULT_PLANTS["cannabis"])
+    target = next(
+        item for item in cannabis["cultivars"]
+        if item["id"] == "rqs_northern_light_auto"
+    )
+    target["active"] = False
+
+    normalized = plant_catalog.normalize_plant_record(
+        cannabis,
+        plant_id="cannabis",
+        fallback=plant_catalog.DEFAULT_PLANTS["cannabis"],
+    )
+
+    migrated = next(
+        item for item in normalized["cultivars"]
+        if item["id"] == "rqs_northern_light_auto"
+    )
+    assert migrated["active"] is False
+    assert migrated["built_in"] is True
 
 
 def test_profile_values_are_bounded_and_ranges_are_ordered():

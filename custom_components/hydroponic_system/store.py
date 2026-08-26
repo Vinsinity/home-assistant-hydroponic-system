@@ -45,6 +45,7 @@ from .plant_catalog import (
     GENERIC_PLANT,
     default_plant_catalog,
     make_custom_plant_record,
+    normalize_breeder_record,
     normalize_plant_catalog,
     normalize_plant_record,
 )
@@ -157,11 +158,16 @@ class HydroponicSystemStore:
         if isinstance(recovery_payload, dict):
             expected = recovery.get("checksum")
             if expected and expected == journal_checksum(recovery_payload):
-                merged, recovered = merge_journal_recovery(journal, recovery_payload)
+                recovery_journal, recovery_migrated = migrate_journal(
+                    recovery_payload
+                )
+                merged, recovered = merge_journal_recovery(
+                    journal, recovery_journal
+                )
                 self.data.update(merged)
                 self.journal_diagnostic["mirrored"] = True
                 self.journal_diagnostic["recovered"] = recovered
-                migrated = migrated or recovered
+                migrated = migrated or recovery_migrated or recovered
             else:
                 self.journal_diagnostic["recovery_error"] = "Recovery checksum mismatch"
                 migrated = True
@@ -399,6 +405,24 @@ class HydroponicSystemStore:
         order = catalog.setdefault("order", [])
         if plant_id not in order:
             order.append(plant_id)
+        await self.async_save()
+        return deepcopy(record)
+
+    async def async_update_breeder(
+        self, breeder_id: str, values: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Create or update one persistent breeder or seed-bank record."""
+        catalog = self.data.setdefault("plant_catalog", default_plant_catalog())
+        existing = catalog.setdefault("breeders", {}).get(breeder_id)
+        record = normalize_breeder_record(
+            values, breeder_id=breeder_id, fallback=existing
+        )
+        if not record["name"]:
+            raise ValueError("Breeder or seed-bank name is required")
+        catalog["breeders"][breeder_id] = record
+        order = catalog.setdefault("breeder_order", [])
+        if breeder_id not in order:
+            order.append(breeder_id)
         await self.async_save()
         return deepcopy(record)
 

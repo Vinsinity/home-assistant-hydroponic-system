@@ -31,6 +31,10 @@ def _record(record_id: str, start_date: str):
         identity={
             "plant_species": "Tomato",
             "cultivar": "Marmande",
+            "cultivar_id": "example_marmande",
+            "growth_type": "photoperiod",
+            "breeder_id": "example_breeder",
+            "breeder_name": "Example Breeder",
             "plant_count": 4,
             "growing_method": "RDWC",
             "reservoir_volume_l": 80,
@@ -43,6 +47,11 @@ def _record(record_id: str, start_date: str):
         plant_profile_snapshot={
             "id": "tomato",
             "profile": {"kind": "editable_example"},
+        },
+        genetics_snapshot={
+            "growth_type": {"id": "photoperiod", "name": "Photoperiod"},
+            "breeder": {"id": "example_breeder", "name": "Example Breeder"},
+            "cultivar": {"id": "example_marmande", "name": "Marmande"},
         },
         cultivation_id=record_id,
         timestamp=f"{start_date}T08:00:00+00:00",
@@ -86,6 +95,9 @@ def test_cultivation_keeps_its_system_snapshot_in_record_and_start_event():
     assert started["data"]["system_snapshot"] == record["system_snapshot"]
     assert record["plant_profile_snapshot"]["id"] == "tomato"
     assert started["data"]["plant_profile_snapshot"] == record["plant_profile_snapshot"]
+    assert record["genetics_snapshot"]["breeder"]["name"] == "Example Breeder"
+    assert started["data"]["genetics_snapshot"] == record["genetics_snapshot"]
+    assert record["identity"]["cultivar_id"] == "example_marmande"
 
 
 def test_first_enabled_plant_stage_becomes_initial_stage():

@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 
-PLANT_CATALOG_SCHEMA_VERSION = 1
+PLANT_CATALOG_SCHEMA_VERSION = 2
 STAGE_ORDER = ("germination", "early_veg", "veg", "bloom", "darkness", "harvest")
 PROFILE_KIND = "editable_example"
 
@@ -23,6 +23,183 @@ OKLAHOMA_HYDROPONICS_REFERENCE = (
 )
 CANNABIS_HYDROPONICS_REFERENCE = "https://pmc.ncbi.nlm.nih.gov/articles/PMC7424260/"
 CANNABIS_PHOTOPERIOD_REFERENCE = "https://ask.ifas.ufl.edu/publication/HS1452"
+
+DEFAULT_BREEDERS: dict[str, dict[str, Any]] = {
+    "royal_queen_seeds": {
+        "id": "royal_queen_seeds",
+        "name": "Royal Queen Seeds",
+        "kind": "breeder_seed_bank",
+        "website": "https://www.royalqueenseeds.com/",
+        "aliases": ["RQS"],
+        "built_in": True,
+    },
+    "barneys_farm": {
+        "id": "barneys_farm",
+        "name": "Barney's Farm",
+        "kind": "breeder_seed_bank",
+        "website": "https://www.barneysfarm.com/",
+        "aliases": ["Barneys Farm", "Barney’s Farm"],
+        "built_in": True,
+    },
+    "amnesia_seeds": {
+        "id": "amnesia_seeds",
+        "name": "Amnesia Seeds",
+        "kind": "seed_bank",
+        "website": "https://amnesiaseeds.com/",
+        "aliases": [],
+        "built_in": True,
+    },
+    "dutch_passion": {
+        "id": "dutch_passion",
+        "name": "Dutch Passion",
+        "kind": "breeder_seed_bank",
+        "website": "https://dutch-passion.com/",
+        "aliases": [],
+        "built_in": True,
+    },
+    "sensi_seeds": {
+        "id": "sensi_seeds",
+        "name": "Sensi Seeds",
+        "kind": "breeder_seed_bank",
+        "website": "https://sensiseeds.com/",
+        "aliases": [],
+        "built_in": True,
+    },
+    "fast_buds": {
+        "id": "fast_buds",
+        "name": "Fast Buds",
+        "kind": "breeder_seed_bank",
+        "website": "https://2fast4buds.com/",
+        "aliases": ["2 Fast 4 Buds", "FastBuds"],
+        "built_in": True,
+    },
+}
+
+CANNABIS_GROWTH_TYPES = [
+    {
+        "id": "photoperiod",
+        "name": "Photoperiod",
+        "description": "Çiçeklenme ışık programındaki değişime bağlıdır.",
+        "built_in": True,
+    },
+    {
+        "id": "autoflower",
+        "name": "Autoflower",
+        "description": "Çiçeklenme ışık programından bağımsız olarak yaşla ilerler.",
+        "built_in": True,
+    },
+]
+
+CANNABIS_CULTIVARS = [
+    {
+        "id": "rqs_northern_light",
+        "name": "Northern Light",
+        "growth_type": "photoperiod",
+        "breeder_id": "royal_queen_seeds",
+        "reference_url": "https://www.royalqueenseeds.com/87-classic-strains",
+    },
+    {
+        "id": "rqs_amnesia_haze",
+        "name": "Amnesia Haze",
+        "growth_type": "photoperiod",
+        "breeder_id": "royal_queen_seeds",
+        "reference_url": "https://www.royalqueenseeds.com/",
+    },
+    {
+        "id": "rqs_purple_queen",
+        "name": "Purple Queen",
+        "growth_type": "photoperiod",
+        "breeder_id": "royal_queen_seeds",
+        "reference_url": "https://www.royalqueenseeds.com/",
+    },
+    {
+        "id": "rqs_white_widow",
+        "name": "White Widow",
+        "growth_type": "photoperiod",
+        "breeder_id": "royal_queen_seeds",
+        "reference_url": "https://www.royalqueenseeds.com/",
+    },
+    {
+        "id": "rqs_northern_light_auto",
+        "name": "Northern Light Auto",
+        "growth_type": "autoflower",
+        "breeder_id": "royal_queen_seeds",
+        "reference_url": "https://www.royalqueenseeds.com/34-autoflowering-cannabis-seeds",
+    },
+    {
+        "id": "rqs_amnesia_haze_auto",
+        "name": "Amnesia Haze Auto",
+        "growth_type": "autoflower",
+        "breeder_id": "royal_queen_seeds",
+        "reference_url": "https://www.royalqueenseeds.com/34-autoflowering-cannabis-seeds",
+    },
+    {
+        "id": "rqs_green_gelato_auto",
+        "name": "Green Gelato Auto",
+        "growth_type": "autoflower",
+        "breeder_id": "royal_queen_seeds",
+        "reference_url": "https://www.royalqueenseeds.com/34-autoflowering-cannabis-seeds",
+    },
+    {
+        "id": "barneys_purple_haze",
+        "name": "Purple Haze",
+        "growth_type": "photoperiod",
+        "breeder_id": "barneys_farm",
+        "reference_url": "https://www.barneysfarm.com/brochures/uk-catalogue.pdf",
+    },
+    {
+        "id": "barneys_amnesia_haze",
+        "name": "Amnesia Haze",
+        "growth_type": "photoperiod",
+        "breeder_id": "barneys_farm",
+        "reference_url": "https://www.barneysfarm.com/high-energy-collection",
+    },
+    {
+        "id": "barneys_northern_lights",
+        "name": "Northern Lights",
+        "growth_type": "photoperiod",
+        "breeder_id": "barneys_farm",
+        "reference_url": "https://www.barneysfarm.com/outdoor-cannabis-seeds",
+    },
+    {
+        "id": "barneys_amnesia_haze_auto",
+        "name": "Amnesia Haze Auto",
+        "growth_type": "autoflower",
+        "breeder_id": "barneys_farm",
+        "reference_url": "https://www.barneysfarm.com/us/amnesia-haze-auto-autoflower-strain-563",
+    },
+    {
+        "id": "barneys_purple_punch_auto",
+        "name": "Purple Punch Auto",
+        "growth_type": "autoflower",
+        "breeder_id": "barneys_farm",
+        "reference_url": "https://www.barneysfarm.com/brochures/uk-catalogue.pdf",
+    },
+    {
+        "id": "barneys_white_widow_xxl_auto",
+        "name": "White Widow XXL Auto",
+        "growth_type": "autoflower",
+        "breeder_id": "barneys_farm",
+        "reference_url": "https://www.barneysfarm.com/brochures/uk-catalogue.pdf",
+    },
+    {
+        "id": "dutch_passion_auto_blackberry_kush",
+        "name": "Auto Blackberry Kush",
+        "growth_type": "autoflower",
+        "breeder_id": "dutch_passion",
+        "reference_url": "https://dutch-passion.com/en/autoflowering-seeds",
+    },
+    {
+        "id": "dutch_passion_auto_orange_bud",
+        "name": "Auto Orange Bud",
+        "growth_type": "autoflower",
+        "breeder_id": "dutch_passion",
+        "reference_url": "https://dutch-passion.com/en/autoflowering-seeds",
+    },
+]
+
+for _cultivar in CANNABIS_CULTIVARS:
+    _cultivar.update({"aliases": [], "active": True, "built_in": True})
 
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -155,6 +332,8 @@ def _plant(
     references: list[str] | None = None,
     notes: str = "",
     aliases: list[str] | None = None,
+    growth_types: list[dict[str, Any]] | None = None,
+    cultivar_records: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": plant_id,
@@ -163,6 +342,8 @@ def _plant(
         "botanical_name": botanical_name,
         "category": category,
         "cultivar_examples": cultivars,
+        "growth_types": growth_types or [],
+        "cultivars": cultivar_records or [],
         "aliases": aliases or [],
         "notes": notes,
         "built_in": True,
@@ -189,7 +370,7 @@ DEFAULT_PLANTS: dict[str, dict[str, Any]] = {
     ),
     "cannabis": _plant(
         "cannabis", "Cannabis / Marijuana", "Cannabis / Marijuana", "Cannabis sativa L.", "cannabis",
-        ["Photoperiod", "Autoflower", "CBD dominant", "Northern Lights", "Blue Dream", "White Widow"],
+        ["Northern Light", "Northern Lights", "Purple Haze", "Amnesia Haze", "White Widow"],
         _stages(ph=(5.6, 6.0), ec=(1.0, 2.4), germination_days=5,
                 early_days=14, veg_days=28, bloom_days=56,
                 veg_photoperiod=18, bloom_photoperiod=12, harvest_days=10),
@@ -199,6 +380,8 @@ DEFAULT_PLANTS: dict[str, dict[str, Any]] = {
             "review and edit every stage before relying on this example."
         ),
         aliases=["Cannabis", "Marijuana", "Kenevir", "Hemp"],
+        growth_types=CANNABIS_GROWTH_TYPES,
+        cultivar_records=CANNABIS_CULTIVARS,
     ),
     "basil": _plant(
         "basil", "Fesleğen", "Basil", "Ocimum basilicum", "herb",
@@ -262,6 +445,132 @@ def _normalize_stage(value: Any, fallback: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _normalize_aliases(value: Any, fallback: Any = None) -> list[str]:
+    aliases: list[str] = []
+    raw_aliases = value if isinstance(value, list) else fallback
+    if not isinstance(raw_aliases, list):
+        return aliases
+    for item in raw_aliases:
+        alias = _text(item, 96)
+        if alias and alias.casefold() not in {entry.casefold() for entry in aliases}:
+            aliases.append(alias)
+        if len(aliases) == 24:
+            break
+    return aliases
+
+
+def normalize_breeder_record(
+    value: Any, *, breeder_id: str | None = None,
+    fallback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return one bounded breeder or seed-bank library record."""
+    value = value if isinstance(value, dict) else {}
+    fallback = deepcopy(fallback or {})
+    raw_id = _text(breeder_id or value.get("id") or fallback.get("id"), 64).lower()
+    if not _ID_PATTERN.fullmatch(raw_id):
+        raise ValueError(
+            "Breeder id must use lowercase letters, digits, hyphens, or underscores"
+        )
+    website = _text(value.get("website", fallback.get("website", "")), 500)
+    if website and not website.startswith(("https://", "http://")):
+        website = ""
+    kind = _text(value.get("kind") or fallback.get("kind") or "breeder_seed_bank", 32)
+    if kind not in {"breeder", "seed_bank", "breeder_seed_bank", "supplier"}:
+        kind = "breeder_seed_bank"
+    return {
+        "id": raw_id,
+        "name": _text(value.get("name") or fallback.get("name"), 96),
+        "kind": kind,
+        "website": website,
+        "aliases": _normalize_aliases(
+            value.get("aliases"), fallback.get("aliases", [])
+        ),
+        "built_in": bool(fallback.get("built_in", False)),
+    }
+
+
+def _normalize_growth_type(
+    value: Any, *, growth_type_id: str,
+    fallback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    value = value if isinstance(value, dict) else {}
+    fallback = deepcopy(fallback or {})
+    if not _ID_PATTERN.fullmatch(growth_type_id):
+        raise ValueError("Invalid growth type id")
+    return {
+        "id": growth_type_id,
+        "name": _text(value.get("name") or fallback.get("name"), 64),
+        "description": _text(
+            value.get("description") or fallback.get("description"), 240
+        ),
+        "built_in": bool(fallback.get("built_in", False)),
+    }
+
+
+def _normalize_cultivar(
+    value: Any, *, cultivar_id: str,
+    fallback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    value = value if isinstance(value, dict) else {}
+    fallback = deepcopy(fallback or {})
+    if not _ID_PATTERN.fullmatch(cultivar_id):
+        raise ValueError("Invalid cultivar id")
+    growth_type = _text(
+        value.get("growth_type") or fallback.get("growth_type"), 64
+    ).lower()
+    breeder_id = _text(
+        value.get("breeder_id") or fallback.get("breeder_id"), 64
+    ).lower()
+    if growth_type and not _ID_PATTERN.fullmatch(growth_type):
+        growth_type = ""
+    if breeder_id and not _ID_PATTERN.fullmatch(breeder_id):
+        breeder_id = ""
+    reference_url = _text(
+        value.get("reference_url", fallback.get("reference_url", "")), 500
+    )
+    if reference_url and not reference_url.startswith(("https://", "http://")):
+        reference_url = ""
+    return {
+        "id": cultivar_id,
+        "name": _text(value.get("name") or fallback.get("name"), 96),
+        "growth_type": growth_type,
+        "breeder_id": breeder_id,
+        "aliases": _normalize_aliases(
+            value.get("aliases"), fallback.get("aliases", [])
+        ),
+        "reference_url": reference_url,
+        "active": _enabled(value.get("active"), fallback.get("active", True)),
+        "built_in": bool(fallback.get("built_in", False)),
+    }
+
+
+def _normalize_nested_records(
+    value: Any, defaults: list[dict[str, Any]], normalizer, *, maximum: int
+) -> list[dict[str, Any]]:
+    incoming: dict[str, dict[str, Any]] = {}
+    if isinstance(value, list):
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            item_id = _text(item.get("id"), 64).lower()
+            if _ID_PATTERN.fullmatch(item_id):
+                incoming[item_id] = item
+    default_by_id = {str(item["id"]): item for item in defaults}
+    order = [*default_by_id]
+    order.extend(item_id for item_id in incoming if item_id not in default_by_id)
+    result = []
+    for item_id in order[:maximum]:
+        fallback = default_by_id.get(item_id)
+        raw = incoming.get(item_id, fallback)
+        try:
+            normalized = normalizer(raw, item_id, fallback)
+        except ValueError:
+            continue
+        if normalized.get("name"):
+            result.append(normalized)
+    return result
+
+
 def normalize_plant_record(
     value: Any, *, plant_id: str | None = None, fallback: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -294,15 +603,22 @@ def normalize_plant_record(
                 cultivars.append(cultivar)
             if len(cultivars) == 24:
                 break
-    aliases = []
-    raw_aliases = value.get("aliases", fallback.get("aliases", []))
-    if isinstance(raw_aliases, list):
-        for item in raw_aliases:
-            alias = _text(item, 96)
-            if alias and alias.casefold() not in {entry.casefold() for entry in aliases}:
-                aliases.append(alias)
-            if len(aliases) == 24:
-                break
+    growth_types = _normalize_nested_records(
+        value.get("growth_types"),
+        fallback.get("growth_types", []),
+        lambda raw, item_id, item_fallback: _normalize_growth_type(
+            raw, growth_type_id=item_id, fallback=item_fallback
+        ),
+        maximum=16,
+    )
+    cultivars_structured = _normalize_nested_records(
+        value.get("cultivars"),
+        fallback.get("cultivars", []),
+        lambda raw, item_id, item_fallback: _normalize_cultivar(
+            raw, cultivar_id=item_id, fallback=item_fallback
+        ),
+        maximum=500,
+    )
     return {
         "id": raw_id,
         "name": _text(value.get("name") or fallback.get("name"), 96),
@@ -310,7 +626,11 @@ def normalize_plant_record(
         "botanical_name": _text(value.get("botanical_name") or fallback.get("botanical_name"), 160),
         "category": _text(value.get("category") or fallback.get("category") or "custom", 32),
         "cultivar_examples": cultivars,
-        "aliases": aliases,
+        "growth_types": growth_types,
+        "cultivars": cultivars_structured,
+        "aliases": _normalize_aliases(
+            value.get("aliases"), fallback.get("aliases", [])
+        ),
         "notes": _text(value.get("notes") or fallback.get("notes"), 2000),
         "built_in": bool(fallback.get("built_in", False)),
         "profile": {"kind": PROFILE_KIND, "stages": stages, "references": references},
@@ -323,6 +643,8 @@ def default_plant_catalog() -> dict[str, Any]:
         "schema_version": PLANT_CATALOG_SCHEMA_VERSION,
         "order": list(DEFAULT_PLANTS),
         "records": deepcopy(DEFAULT_PLANTS),
+        "breeder_order": list(DEFAULT_BREEDERS),
+        "breeders": deepcopy(DEFAULT_BREEDERS),
     }
 
 
@@ -346,17 +668,53 @@ def normalize_plant_catalog(value: Any) -> dict[str, Any]:
         if record["name"]:
             records[plant_id] = record
     order = []
-    for item in value.get("order", []):
+    incoming_order = value.get("order") if isinstance(value.get("order"), list) else []
+    for item in incoming_order:
         plant_id = _text(item, 64).lower()
         if plant_id in records and plant_id not in order:
             order.append(plant_id)
     for plant_id in records:
         if plant_id not in order:
             order.append(plant_id)
+    incoming_breeders = (
+        value.get("breeders") if isinstance(value.get("breeders"), dict) else {}
+    )
+    breeders: dict[str, dict[str, Any]] = {}
+    for breeder_id, default in DEFAULT_BREEDERS.items():
+        breeders[breeder_id] = normalize_breeder_record(
+            incoming_breeders.get(breeder_id),
+            breeder_id=breeder_id,
+            fallback=default,
+        )
+    for raw_id, raw_record in incoming_breeders.items():
+        breeder_id = _text(raw_id, 64).lower()
+        if breeder_id in breeders or not _ID_PATTERN.fullmatch(breeder_id):
+            continue
+        try:
+            breeder = normalize_breeder_record(raw_record, breeder_id=breeder_id)
+        except ValueError:
+            continue
+        if breeder["name"]:
+            breeders[breeder_id] = breeder
+    breeder_order = []
+    incoming_breeder_order = (
+        value.get("breeder_order")
+        if isinstance(value.get("breeder_order"), list)
+        else []
+    )
+    for item in incoming_breeder_order:
+        breeder_id = _text(item, 64).lower()
+        if breeder_id in breeders and breeder_id not in breeder_order:
+            breeder_order.append(breeder_id)
+    for breeder_id in breeders:
+        if breeder_id not in breeder_order:
+            breeder_order.append(breeder_id)
     return {
         "schema_version": PLANT_CATALOG_SCHEMA_VERSION,
         "order": order,
         "records": records,
+        "breeder_order": breeder_order,
+        "breeders": breeders,
     }
 
 

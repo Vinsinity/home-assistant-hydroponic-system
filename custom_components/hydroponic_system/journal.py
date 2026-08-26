@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 
-JOURNAL_SCHEMA_VERSION = 3
+JOURNAL_SCHEMA_VERSION = 4
 
 EVENT_TYPES = frozenset(
     {
@@ -64,6 +64,10 @@ IDENTITY_DEFAULTS: dict[str, Any] = {
     "plant_species": "",
     "botanical_name": "",
     "cultivar": "",
+    "cultivar_id": "",
+    "growth_type": "",
+    "breeder_id": "",
+    "breeder_name": "",
     "source": "",
     "plant_count": 1,
     "growing_method": "RDWC",
@@ -94,6 +98,7 @@ def empty_cultivation_view() -> dict[str, Any]:
         "identity": deepcopy(IDENTITY_DEFAULTS),
         "system_snapshot": {},
         "plant_profile_snapshot": {},
+        "genetics_snapshot": {},
         "start_date": "",
         "started_at": "",
         "completed_at": "",
@@ -111,6 +116,10 @@ def normalize_identity(value: Any) -> dict[str, Any]:
         ("plant_species", 96),
         ("botanical_name", 160),
         ("cultivar", 96),
+        ("cultivar_id", 64),
+        ("growth_type", 64),
+        ("breeder_id", 64),
+        ("breeder_name", 96),
         ("source", 160),
         ("growing_method", 64),
         ("photoperiod", 64),
@@ -251,6 +260,12 @@ def _normalize_record(record: dict[str, Any], record_id: str) -> dict[str, Any]:
         else {},
         maximum_bytes=65_536,
     )
+    result["genetics_snapshot"] = _bounded_json(
+        result.get("genetics_snapshot")
+        if isinstance(result.get("genetics_snapshot"), dict)
+        else {},
+        maximum_bytes=16_384,
+    )
     result["plan"] = deepcopy(result.get("plan") if isinstance(result.get("plan"), list) else [])
     result["transitions"] = deepcopy(
         result.get("transitions") if isinstance(result.get("transitions"), list) else []
@@ -266,6 +281,7 @@ def new_cultivation(
     plan: list[dict[str, Any]],
     system_snapshot: dict[str, Any] | None = None,
     plant_profile_snapshot: dict[str, Any] | None = None,
+    genetics_snapshot: dict[str, Any] | None = None,
     cultivation_id: str | None = None,
     timestamp: str | None = None,
 ) -> dict[str, Any]:
@@ -284,6 +300,9 @@ def new_cultivation(
         "system_snapshot": _bounded_json(system_snapshot or {}),
         "plant_profile_snapshot": _bounded_json(
             plant_profile_snapshot or {}, maximum_bytes=65_536
+        ),
+        "genetics_snapshot": _bounded_json(
+            genetics_snapshot or {}, maximum_bytes=16_384
         ),
         "start_date": start_date,
         "started_at": timestamp,
@@ -341,6 +360,7 @@ def start_cultivation(
                 "identity": record["identity"],
                 "system_snapshot": record.get("system_snapshot", {}),
                 "plant_profile_snapshot": record.get("plant_profile_snapshot", {}),
+                "genetics_snapshot": record.get("genetics_snapshot", {}),
             },
             created_by=created_by,
             created_at=record["started_at"],

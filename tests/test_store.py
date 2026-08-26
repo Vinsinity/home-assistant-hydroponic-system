@@ -97,6 +97,10 @@ def test_store_mirrors_then_recovers_an_event_missing_from_primary():
     asyncio.run(restored.async_load())
 
     assert restored.journal_diagnostic["recovered"] is True
+    assert restored.data["schema_version"] == journal.JOURNAL_SCHEMA_VERSION
+    assert restored.data["cultivations"]["records"]["recovery_grow"][
+        "genetics_snapshot"
+    ] == {}
     assert any(event["id"] == "durable_event" for event in restored.data["events"])
     assert any(
         event["id"] == "durable_event"

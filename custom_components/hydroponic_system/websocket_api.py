@@ -206,6 +206,28 @@ async def websocket_save_plant(hass, connection, msg) -> None:
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "hydroponic_system/plant_catalog/breeder/save",
+        vol.Required("breeder_id"): str,
+        vol.Required("values"): dict,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_save_breeder(hass, connection, msg) -> None:
+    """Create or update one breeder or seed-bank library record."""
+    store = hass.data[DOMAIN]["store"]
+    try:
+        breeder = await store.async_update_breeder(
+            msg["breeder_id"], msg["values"]
+        )
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_breeder", str(err))
+        return
+    connection.send_result(msg["id"], breeder)
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "hydroponic_system/assistant/settings/save",
         vol.Required("values"): dict,
     }
@@ -463,6 +485,89 @@ async def websocket_start_cultivation(hass, connection, msg) -> None:
             "botanical_name": selected_plant.get("botanical_name", ""),
         }
     )
+    breeders = catalog.get("breeders", {}) if isinstance(catalog, dict) else {}
+    growth_types = {
+        str(item.get("id")): item
+        for item in selected_plant.get("growth_types", [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    cultivars = {
+        str(item.get("id")): item
+        for item in selected_plant.get("cultivars", [])
+        if isinstance(item, dict) and item.get("id") and item.get("active", True)
+    }
+    growth_type_id = str(identity.get("growth_type") or "").strip().lower()
+    breeder_id = str(identity.get("breeder_id") or "").strip().lower()
+    cultivar_id = str(identity.get("cultivar_id") or "").strip().lower()
+    cultivar = cultivars.get(cultivar_id) if cultivar_id else None
+    if cultivar_id and cultivar is None:
+        connection.send_error(
+            msg["id"], "cultivar_not_found", "Selected cultivar was not found"
+        )
+        return
+    if cultivar is None and identity.get("cultivar"):
+        cultivar_name = str(identity["cultivar"]).strip().casefold()
+        matches = [
+            item for item in cultivars.values()
+            if cultivar_name in {
+                str(item.get("name") or "").casefold(),
+                *(str(alias).casefold() for alias in item.get("aliases", [])),
+            }
+            and (not growth_type_id or item.get("growth_type") == growth_type_id)
+            and (not breeder_id or item.get("breeder_id") == breeder_id)
+        ]
+        if len(matches) == 1:
+            cultivar = matches[0]
+    if cultivar is not None:
+        cultivar_id = str(cultivar["id"])
+        growth_type_id = str(cultivar.get("growth_type") or growth_type_id)
+        breeder_id = str(cultivar.get("breeder_id") or breeder_id)
+        identity.update(
+            {
+                "cultivar_id": cultivar_id,
+                "cultivar": cultivar.get("name", ""),
+                "growth_type": growth_type_id,
+                "breeder_id": breeder_id,
+            }
+        )
+    if selected_plant.get("category") == "cannabis" and not growth_type_id:
+        connection.send_error(
+            msg["id"],
+            "growth_type_required",
+            "Select Photoperiod or Autoflower for Cannabis",
+        )
+        return
+    growth_type = growth_types.get(growth_type_id) if growth_type_id else None
+    if growth_type_id and growth_type is None:
+        connection.send_error(
+            msg["id"], "growth_type_not_found", "Selected growth type was not found"
+        )
+        return
+    breeder = breeders.get(breeder_id) if breeder_id else None
+    if breeder_id and breeder is None:
+        connection.send_error(
+            msg["id"], "breeder_not_found", "Selected breeder was not found"
+        )
+        return
+    identity.update(
+        {
+            "growth_type": growth_type_id,
+            "breeder_id": breeder_id,
+            "breeder_name": breeder.get("name", "") if breeder else "",
+        }
+    )
+    genetics_snapshot = {
+        "growth_type": deepcopy(growth_type or {}),
+        "breeder": deepcopy(breeder or {}),
+        "cultivar": deepcopy(cultivar or {
+            "id": "",
+            "name": str(identity.get("cultivar") or "")[:96],
+            "growth_type": growth_type_id,
+            "breeder_id": breeder_id,
+            "built_in": False,
+        }),
+        "source": str(identity.get("source") or "")[:160],
+    }
     try:
         plan = plant_plan(selected_plant)
         cultivation = new_cultivation(
@@ -474,6 +579,7 @@ async def websocket_start_cultivation(hass, connection, msg) -> None:
                 store.data.get("system_profile")
             ),
             plant_profile_snapshot=selected_plant,
+            genetics_snapshot=genetics_snapshot,
             cultivation_id=msg.get("cultivation_id"),
         )
         if not cultivation["identity"]["plant_species"]:
@@ -929,6 +1035,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_save_profile)
     websocket_api.async_register_command(hass, websocket_save_system_profile)
     websocket_api.async_register_command(hass, websocket_save_plant)
+    websocket_api.async_register_command(hass, websocket_save_breeder)
     websocket_api.async_register_command(hass, websocket_save_assistant_settings)
     websocket_api.async_register_command(hass, websocket_generate_assistant_report)
     websocket_api.async_register_command(hass, websocket_select_stage)
