@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 
-SYSTEM_PROFILE_SCHEMA_VERSION = 1
+SYSTEM_PROFILE_SCHEMA_VERSION = 2
 
 DEFAULT_SYSTEM_PROFILE: dict[str, Any] = {
     "schema_version": SYSTEM_PROFILE_SCHEMA_VERSION,
@@ -26,6 +26,7 @@ DEFAULT_SYSTEM_PROFILE: dict[str, Any] = {
     },
     "system": {
         "growing_method": "RDWC",
+        "growing_medium": "",
         "reservoir_volume_l": 0.0,
         "system_volume_l": 0.0,
         "plant_capacity": 1,
@@ -80,7 +81,7 @@ def _integer(value: Any, *, minimum: int, maximum: int) -> int:
 
 
 def normalize_system_profile(value: Any) -> dict[str, Any]:
-    """Return a complete and bounded cabin, water-system, and light profile."""
+    """Return a complete and bounded grow-area, medium, and light profile."""
     value = value if isinstance(value, dict) else {}
     cabin = value.get("cabin") if isinstance(value.get("cabin"), dict) else {}
     system = value.get("system") if isinstance(value.get("system"), dict) else {}
@@ -99,6 +100,7 @@ def normalize_system_profile(value: Any) -> dict[str, Any]:
     result["system"].update(
         {
             "growing_method": _text(system.get("growing_method") or "RDWC", 64),
+            "growing_medium": _text(system.get("growing_medium"), 96),
             "reservoir_volume_l": _number(
                 system.get("reservoir_volume_l"), minimum=0, maximum=100000, digits=3
             ),
@@ -179,12 +181,21 @@ def system_profile_completeness(value: Any) -> dict[str, Any]:
         profile["system"],
         profile["lighting"],
     )
+    reservoir_methods = {
+        "RDWC", "DWC", "NFT", "Ebb and Flow", "Drip", "Aeroponics", "Kratky"
+    }
+    uses_reservoir = system["growing_method"] in reservoir_methods
     items = [
-        {"key": "cabin", "label": "Kabin adı ve ölçüleri", "complete": bool(
-            cabin["name"] and cabin["width_cm"] and cabin["depth_cm"] and cabin["height_cm"]
+        {"key": "cabin", "label": "Yetiştirme alanı ölçüleri", "complete": bool(
+            cabin["width_cm"] and cabin["depth_cm"] and cabin["height_cm"]
+            and system["plant_capacity"]
         )},
-        {"key": "system", "label": "Su sistemi ve hacimler", "complete": bool(
-            system["growing_method"] and system["reservoir_volume_l"] and system["system_volume_l"]
+        {"key": "system", "label": "Yöntem ve yetiştirme medyası", "complete": bool(
+            system["growing_method"] and system["growing_medium"]
+            and (
+                not uses_reservoir
+                or (system["reservoir_volume_l"] and system["system_volume_l"])
+            )
         )},
         {"key": "lighting", "label": "Işık modeli ve gücü", "complete": bool(
             (lighting["brand"] or lighting["model"]) and lighting["power_w_each"]
@@ -237,7 +248,7 @@ def assistant_context_summary(
     elif not cultivation.get("plant_profile_snapshot"):
         missing.append("Bitki türü profili")
     if not system_status["complete"]:
-        missing.append("Kabin / sistem / ışık bilgileri")
+        missing.append("Yetiştirme alanı / medya / ışık bilgileri")
     if not sensors:
         missing.append("Sensör geçmişi")
     if not recent_events:

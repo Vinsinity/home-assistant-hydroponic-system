@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.32.0
+
+- Replace the Cabin name/location form with only grow-area dimensions and plant capacity.
+- Replace the misleading Water System card with cultivation method and growing-medium selection.
+- Show reservoir and solution volumes only for methods that actually use a reservoir.
+- Carry the selected growing medium into cultivation identity, immutable system snapshots, Overview, the grow-start review, and read-only Assistant context.
+- Migrate system profiles to schema 2 and the append-only journal to schema 6 without deleting legacy fields, cultivations, or events.
+
 ## 0.31.0
 
 - Move Connections, Plant Library, profiles, nutrients, hardware, and dosing into dedicated nested routes beneath Setup while keeping the daily navigation compact.

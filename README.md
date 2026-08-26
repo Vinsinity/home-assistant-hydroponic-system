@@ -2,7 +2,7 @@
 
 Home Assistant profile manager and dedicated control surface for a staged indoor grow system.
 
-## Current scope (0.31.0)
+## Current scope (0.32.0)
 
 ### Grow tracking and Assistant
 
@@ -14,9 +14,9 @@ Home Assistant profile manager and dedicated control surface for a staged indoor
 - Labels built-in targets as editable starting examples rather than universal recipes; crop and cultivar differences remain the user's responsibility.
 - Stores Cannabis growth type (Photoperiod or Autoflower), breeder/seed bank, and breeder-specific strain records separately instead of treating them as one cultivar string.
 - Ships a versioned, editable catalog snapshot with 249 breeder-specific Cannabis offerings from official Royal Queen Seeds, Barney's Farm, Dutch Passion, Sensi Seeds, and Fast Buds catalogs; Amnesia Seeds remains available as a custom source entry.
-- Provides a four-step grow-start wizard that captures plant/genetics, editable starting profile and initial stage, selected nutrient products/program, cabin/water/light context, start date, and notes before a final review.
-- Stores a reusable cabin, hydroponic-system, and lighting profile including dimensions, method, volumes, capacity, fixture identity/power/count, dimmer, height, and daily schedule.
-- Takes immutable snapshots of the selected plant profile, selected genetics/breeder identity, chosen nutrient products, and cabin/system/light profile when a cultivation starts, so later library or configuration edits cannot rewrite historical grow context. Large catalogs remain separate; only the selected cultivar is copied into each cultivation.
+- Provides a four-step grow-start wizard that captures plant/genetics, editable starting profile and initial stage, selected nutrient products/program, grow area/method/medium/light context, start date, and notes before a final review.
+- Stores a reusable grow setup with area dimensions, plant capacity, cultivation method, growing medium, conditional hydroponic volumes, fixture identity/power/count, dimmer, height, and daily light schedule.
+- Takes immutable snapshots of the selected plant profile, selected genetics/breeder identity, chosen nutrient products, and grow area/medium/light profile when a cultivation starts, so later library or configuration edits cannot rewrite historical grow context. Large catalogs remain separate; only the selected cultivar is copied into each cultivation.
 - Adds a product-focused Overview with grow/stage day, today's light plan, recent journal records, and quick actions for notes, water, nutrients, and photos.
 - Hides unconfigured metric and security panels behind compact setup prompts instead of filling the Overview with empty technical cards.
 - Adds a read-only Grow Assistant powered by Home Assistant's official AI Task providers. The selected model receives grow context but no Home Assistant control API or tools.
@@ -38,7 +38,7 @@ Home Assistant profile manager and dedicated control surface for a staged indoor
 - Stores six editable example stage profiles in one Home Assistant storage document.
 - Provides a dedicated responsive profile editor panel.
 - Uses Home Assistant cards, controls, spacing, and theme variables in the panel.
-- Keeps daily product navigation focused on Overview, Journal, Album, Cabin, Assistant, and Setup. Connections, Plant Library, profiles, nutrients, hardware, and dosing use dedicated nested `/setup/...` routes beneath Setup.
+- Keeps daily product navigation focused on Overview, Journal, Album, Area & Light, Assistant, and Setup. Connections, Plant Library, profiles, nutrients, hardware, and dosing use dedicated nested `/setup/...` routes beneath Setup.
 - Shows current readings with 24-hour Recorder history charts.
 - Lets administrators change device, sensor, and equipment mappings without opening the integration options dialog.
 - Supports unlimited camera and moisture-sensor mappings with a security overview and water-alarm state.
@@ -67,7 +67,7 @@ The **Hydroponic System** panel is registered automatically. Monitoring through 
 
 Copy `custom_components/hydroponic_system` into Home Assistant's `config/custom_components` directory, restart Home Assistant, and add the integration from Settings → Devices & services.
 
-The profile editors, entity mappings, grow journal, and Grow Assistant are intentionally separate from the control engine. Saving a profile, selecting a stage, adding a journal event, generating an AI report, or mapping equipment in version 0.31.0 does not operate equipment.
+The profile editors, entity mappings, grow journal, and Grow Assistant are intentionally separate from the control engine. Saving a profile, selecting a stage, adding a journal event, generating an AI report, or mapping equipment in version 0.32.0 does not operate equipment.
 
 Grow Assistant requires a Home Assistant integration that exposes an `ai_task` entity (for example, a supported local or cloud AI provider). Model choice and API credentials remain in that provider's Home Assistant configuration. Hydroponic System sends no LLM tools, service-call access, or device-control API with the task.
 

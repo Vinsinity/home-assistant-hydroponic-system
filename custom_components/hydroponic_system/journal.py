@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 
-JOURNAL_SCHEMA_VERSION = 5
+JOURNAL_SCHEMA_VERSION = 6
 
 EVENT_TYPES = frozenset(
     {
@@ -71,6 +71,7 @@ IDENTITY_DEFAULTS: dict[str, Any] = {
     "source": "",
     "plant_count": 1,
     "growing_method": "RDWC",
+    "growing_medium": "",
     "reservoir_volume_l": 0.0,
     "system_volume_l": 0.0,
     "photoperiod": "profile",
@@ -123,6 +124,7 @@ def normalize_identity(value: Any) -> dict[str, Any]:
         ("breeder_name", 96),
         ("source", 160),
         ("growing_method", 64),
+        ("growing_medium", 96),
         ("photoperiod", 64),
         ("nutrient_program", 160),
         ("notes", 4000),

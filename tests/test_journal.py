@@ -37,6 +37,7 @@ def _record(record_id: str, start_date: str):
             "breeder_name": "Example Breeder",
             "plant_count": 4,
             "growing_method": "RDWC",
+            "growing_medium": "Expanded clay",
             "reservoir_volume_l": 80,
         },
         plan=[{"stage": "germination", "planned_days": 6}],
@@ -108,6 +109,7 @@ def test_cultivation_keeps_its_system_snapshot_in_record_and_start_event():
     assert record["nutrient_program_snapshot"]["nutrient_ids"] == ["base_a", "base_b"]
     assert started["data"]["nutrient_program_snapshot"] == record["nutrient_program_snapshot"]
     assert record["identity"]["cultivar_id"] == "example_marmande"
+    assert record["identity"]["growing_medium"] == "Expanded clay"
 
 
 def test_selected_enabled_plant_stage_becomes_initial_stage():

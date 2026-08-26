@@ -16,13 +16,13 @@ def test_system_profile_is_complete_bounded_and_copy_safe():
     profile = grow_profile.normalize_system_profile(
         {
             "cabin": {
-                "name": "Main cabinet",
                 "width_cm": "120",
                 "depth_cm": 120,
                 "height_cm": 200,
             },
             "system": {
                 "growing_method": "RDWC",
+                "growing_medium": "Expanded clay",
                 "reservoir_volume_l": 80,
                 "system_volume_l": 140,
                 "plant_capacity": 4,
@@ -38,8 +38,31 @@ def test_system_profile_is_complete_bounded_and_copy_safe():
     )
 
     assert profile["cabin"]["width_cm"] == 120
+    assert profile["schema_version"] == 2
+    assert profile["system"]["growing_medium"] == "Expanded clay"
     assert profile["lighting"]["dimmer_percent"] == 100
     assert profile["lighting"]["schedule_on"] == "06:00"
+    assert grow_profile.system_profile_completeness(profile)["complete"] is True
+
+
+def test_non_reservoir_medium_does_not_require_water_volumes():
+    profile = grow_profile.normalize_system_profile(
+        {
+            "cabin": {"width_cm": 100, "depth_cm": 100, "height_cm": 200},
+            "system": {
+                "growing_method": "Hand-watered",
+                "growing_medium": "Soil",
+                "plant_capacity": 4,
+            },
+            "lighting": {
+                "model": "Fixture",
+                "power_w_each": 300,
+                "schedule_on": "06:00",
+                "schedule_off": "00:00",
+            },
+        }
+    )
+
     assert grow_profile.system_profile_completeness(profile)["complete"] is True
 
 
@@ -109,7 +132,7 @@ def test_context_summary_reports_missing_data_plainly():
     assert summary["ready"] is False
     assert summary["missing"] == [
         "Aktif yetiştirme",
-        "Kabin / sistem / ışık bilgileri",
+        "Yetiştirme alanı / medya / ışık bilgileri",
         "Sensör geçmişi",
         "Günlük kaydı",
     ]
