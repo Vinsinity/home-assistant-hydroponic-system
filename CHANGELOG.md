@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.30.0
+
+- Move the built-in Cannabis offerings into a separate, versioned catalog snapshot instead of embedding a short list in Python code.
+- Expand the library to 249 breeder-specific offerings: 143 Photoperiod and 106 Autoflower records across five official catalog sources.
+- Preserve existing edits during Plant Library schema 3 migration while adding newly shipped built-in records by stable ID.
+- Add catalog version, total strain count, source counts, and Photoperiod/Autoflower totals to the Plant Library.
+- Add strain text search plus growth-type and breeder filters, with a bounded 60-row editing window for a responsive dialog.
+- Simplify new cultivation genetics to one searchable strain field that also accepts a custom name.
+- Keep selected genetics snapshotted into the cultivation and append-only journal so future catalog changes cannot rewrite history.
+
 ## 0.29.0
 
 - Separate Cannabis growth type, breeder/seed bank, cultivar identity, and purchase source in the persistent data model.

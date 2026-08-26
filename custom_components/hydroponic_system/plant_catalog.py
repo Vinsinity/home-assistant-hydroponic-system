@@ -8,12 +8,15 @@ not rewrite historical grow context.
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 import math
+from pathlib import Path
 import re
 from typing import Any
+import unicodedata
 
 
-PLANT_CATALOG_SCHEMA_VERSION = 2
+PLANT_CATALOG_SCHEMA_VERSION = 3
 STAGE_ORDER = ("germination", "early_veg", "veg", "bloom", "darkness", "harvest")
 PROFILE_KIND = "editable_example"
 
@@ -90,116 +93,49 @@ CANNABIS_GROWTH_TYPES = [
     },
 ]
 
-CANNABIS_CULTIVARS = [
-    {
-        "id": "rqs_northern_light",
-        "name": "Northern Light",
-        "growth_type": "photoperiod",
-        "breeder_id": "royal_queen_seeds",
-        "reference_url": "https://www.royalqueenseeds.com/87-classic-strains",
-    },
-    {
-        "id": "rqs_amnesia_haze",
-        "name": "Amnesia Haze",
-        "growth_type": "photoperiod",
-        "breeder_id": "royal_queen_seeds",
-        "reference_url": "https://www.royalqueenseeds.com/",
-    },
-    {
-        "id": "rqs_purple_queen",
-        "name": "Purple Queen",
-        "growth_type": "photoperiod",
-        "breeder_id": "royal_queen_seeds",
-        "reference_url": "https://www.royalqueenseeds.com/",
-    },
-    {
-        "id": "rqs_white_widow",
-        "name": "White Widow",
-        "growth_type": "photoperiod",
-        "breeder_id": "royal_queen_seeds",
-        "reference_url": "https://www.royalqueenseeds.com/",
-    },
-    {
-        "id": "rqs_northern_light_auto",
-        "name": "Northern Light Auto",
-        "growth_type": "autoflower",
-        "breeder_id": "royal_queen_seeds",
-        "reference_url": "https://www.royalqueenseeds.com/34-autoflowering-cannabis-seeds",
-    },
-    {
-        "id": "rqs_amnesia_haze_auto",
-        "name": "Amnesia Haze Auto",
-        "growth_type": "autoflower",
-        "breeder_id": "royal_queen_seeds",
-        "reference_url": "https://www.royalqueenseeds.com/34-autoflowering-cannabis-seeds",
-    },
-    {
-        "id": "rqs_green_gelato_auto",
-        "name": "Green Gelato Auto",
-        "growth_type": "autoflower",
-        "breeder_id": "royal_queen_seeds",
-        "reference_url": "https://www.royalqueenseeds.com/34-autoflowering-cannabis-seeds",
-    },
-    {
-        "id": "barneys_purple_haze",
-        "name": "Purple Haze",
-        "growth_type": "photoperiod",
-        "breeder_id": "barneys_farm",
-        "reference_url": "https://www.barneysfarm.com/brochures/uk-catalogue.pdf",
-    },
-    {
-        "id": "barneys_amnesia_haze",
-        "name": "Amnesia Haze",
-        "growth_type": "photoperiod",
-        "breeder_id": "barneys_farm",
-        "reference_url": "https://www.barneysfarm.com/high-energy-collection",
-    },
-    {
-        "id": "barneys_northern_lights",
-        "name": "Northern Lights",
-        "growth_type": "photoperiod",
-        "breeder_id": "barneys_farm",
-        "reference_url": "https://www.barneysfarm.com/outdoor-cannabis-seeds",
-    },
-    {
-        "id": "barneys_amnesia_haze_auto",
-        "name": "Amnesia Haze Auto",
-        "growth_type": "autoflower",
-        "breeder_id": "barneys_farm",
-        "reference_url": "https://www.barneysfarm.com/us/amnesia-haze-auto-autoflower-strain-563",
-    },
-    {
-        "id": "barneys_purple_punch_auto",
-        "name": "Purple Punch Auto",
-        "growth_type": "autoflower",
-        "breeder_id": "barneys_farm",
-        "reference_url": "https://www.barneysfarm.com/brochures/uk-catalogue.pdf",
-    },
-    {
-        "id": "barneys_white_widow_xxl_auto",
-        "name": "White Widow XXL Auto",
-        "growth_type": "autoflower",
-        "breeder_id": "barneys_farm",
-        "reference_url": "https://www.barneysfarm.com/brochures/uk-catalogue.pdf",
-    },
-    {
-        "id": "dutch_passion_auto_blackberry_kush",
-        "name": "Auto Blackberry Kush",
-        "growth_type": "autoflower",
-        "breeder_id": "dutch_passion",
-        "reference_url": "https://dutch-passion.com/en/autoflowering-seeds",
-    },
-    {
-        "id": "dutch_passion_auto_orange_bud",
-        "name": "Auto Orange Bud",
-        "growth_type": "autoflower",
-        "breeder_id": "dutch_passion",
-        "reference_url": "https://dutch-passion.com/en/autoflowering-seeds",
-    },
-]
+_CANNABIS_CATALOG_PATH = Path(__file__).with_name("data") / "cannabis_catalog.json"
 
-for _cultivar in CANNABIS_CULTIVARS:
-    _cultivar.update({"aliases": [], "active": True, "built_in": True})
+
+def _catalog_slug(value: str) -> str:
+    """Create a stable ASCII id fragment from an official cultivar name."""
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "_", normalized.lower()).strip("_")
+
+
+def _load_cannabis_catalog() -> tuple[str, list[dict[str, Any]]]:
+    """Load and expand the source-controlled official catalog snapshot."""
+    with _CANNABIS_CATALOG_PATH.open(encoding="utf-8") as catalog_file:
+        data = json.load(catalog_file)
+    cultivars: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for source in data.get("sources", []):
+        breeder_id = str(source.get("breeder_id", "")).strip()
+        prefix = str(source.get("id_prefix", breeder_id)).strip()
+        references = source.get("reference_urls", {})
+        for growth_type in ("photoperiod", "autoflower"):
+            reference_url = str(references.get(growth_type, "")).strip()
+            for raw_name in source.get(growth_type, []):
+                name = str(raw_name).strip()
+                cultivar_id = f"{prefix}_{_catalog_slug(name)}"[:64].rstrip("_")
+                if not name or not cultivar_id or cultivar_id in seen_ids:
+                    continue
+                seen_ids.add(cultivar_id)
+                cultivars.append(
+                    {
+                        "id": cultivar_id,
+                        "name": name,
+                        "growth_type": growth_type,
+                        "breeder_id": breeder_id,
+                        "reference_url": reference_url,
+                        "aliases": [],
+                        "active": True,
+                        "built_in": True,
+                    }
+                )
+    return str(data.get("catalog_version", "unknown")), cultivars
+
+
+CANNABIS_CATALOG_VERSION, CANNABIS_CULTIVARS = _load_cannabis_catalog()
 
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -617,7 +553,7 @@ def normalize_plant_record(
         lambda raw, item_id, item_fallback: _normalize_cultivar(
             raw, cultivar_id=item_id, fallback=item_fallback
         ),
-        maximum=500,
+        maximum=1000,
     )
     return {
         "id": raw_id,
@@ -641,6 +577,7 @@ def default_plant_catalog() -> dict[str, Any]:
     """Return a copy-safe initial plant library."""
     return {
         "schema_version": PLANT_CATALOG_SCHEMA_VERSION,
+        "catalog_version": CANNABIS_CATALOG_VERSION,
         "order": list(DEFAULT_PLANTS),
         "records": deepcopy(DEFAULT_PLANTS),
         "breeder_order": list(DEFAULT_BREEDERS),
@@ -711,6 +648,7 @@ def normalize_plant_catalog(value: Any) -> dict[str, Any]:
             breeder_order.append(breeder_id)
     return {
         "schema_version": PLANT_CATALOG_SCHEMA_VERSION,
+        "catalog_version": CANNABIS_CATALOG_VERSION,
         "order": order,
         "records": records,
         "breeder_order": breeder_order,

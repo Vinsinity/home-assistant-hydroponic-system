@@ -1,6 +1,7 @@
 """Tests for the persistent, editable plant library."""
 
 from copy import deepcopy
+from collections import Counter
 import importlib.util
 from pathlib import Path
 import sys
@@ -18,7 +19,8 @@ SPEC.loader.exec_module(plant_catalog)
 def test_default_catalog_contains_global_core_crops_and_cannabis():
     catalog = plant_catalog.default_plant_catalog()
 
-    assert catalog["schema_version"] == 2
+    assert catalog["schema_version"] == 3
+    assert catalog["catalog_version"] == "2026.08.26"
     assert set(catalog["records"]) >= {
         "tomato", "lettuce", "cannabis", "basil", "strawberry", "pepper", "cucumber"
     }
@@ -29,6 +31,21 @@ def test_default_catalog_contains_global_core_crops_and_cannabis():
         "royal_queen_seeds", "barneys_farm", "amnesia_seeds"
     }
     cannabis = catalog["records"]["cannabis"]
+    cultivars = cannabis["cultivars"]
+    assert len(cultivars) == 249
+    assert len({item["id"] for item in cultivars}) == 249
+    assert Counter(item["growth_type"] for item in cultivars) == {
+        "photoperiod": 143,
+        "autoflower": 106,
+    }
+    assert Counter(item["breeder_id"] for item in cultivars) == {
+        "barneys_farm": 83,
+        "dutch_passion": 76,
+        "royal_queen_seeds": 56,
+        "fast_buds": 19,
+        "sensi_seeds": 15,
+    }
+    assert all(item["reference_url"].startswith("https://") for item in cultivars)
     assert {item["id"] for item in cannabis["growth_types"]} == {
         "photoperiod", "autoflower"
     }
@@ -60,9 +77,37 @@ def test_catalog_migration_preserves_edits_and_adds_missing_defaults():
     assert catalog["records"]["my_plant"]["built_in"] is False
     assert "lettuce" in catalog["records"]
     assert catalog["order"][:2] == ["my_plant", "tomato"]
-    assert catalog["schema_version"] == 2
+    assert catalog["schema_version"] == 3
+    assert catalog["catalog_version"] == "2026.08.26"
     assert catalog["breeders"]["royal_queen_seeds"]["name"] == "Royal Queen Seeds"
-    assert len(catalog["records"]["cannabis"]["cultivars"]) >= 10
+    assert len(catalog["records"]["cannabis"]["cultivars"]) == 249
+
+
+def test_catalog_upgrade_preserves_builtin_edits_and_adds_new_offerings():
+    cannabis = deepcopy(plant_catalog.DEFAULT_PLANTS["cannabis"])
+    edited = next(
+        item for item in cannabis["cultivars"]
+        if item["id"] == "rqs_northern_light_auto"
+    )
+    edited["name"] = "Benim Northern Light Auto kaydım"
+    edited["active"] = False
+    cannabis["cultivars"] = [edited]
+
+    catalog = plant_catalog.normalize_plant_catalog(
+        {
+            "schema_version": 2,
+            "records": {"cannabis": cannabis},
+        }
+    )
+
+    migrated = catalog["records"]["cannabis"]["cultivars"]
+    preserved = next(
+        item for item in migrated if item["id"] == "rqs_northern_light_auto"
+    )
+    assert preserved["name"] == "Benim Northern Light Auto kaydım"
+    assert preserved["active"] is False
+    assert len(migrated) == 249
+    assert any(item["id"] == "fast_buds_ztrawberriez_auto" for item in migrated)
 
 
 def test_catalog_preserves_custom_breeder_and_custom_cultivar():
