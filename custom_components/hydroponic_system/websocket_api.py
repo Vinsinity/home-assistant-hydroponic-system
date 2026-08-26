@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-from uuid import uuid4
+from datetime import date
 
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 from .const import CONTROL_KEYS, DEFAULT_CULTIVATION_PLAN, DEFAULT_DOSING_POLICY, DOMAIN, SENSOR_KEYS, STAGE_ORDER
 from .entity_map import resolve_entities
+from .journal import USER_EVENT_TYPES, empty_cultivation_view, new_cultivation
 from .readiness import cultivation_readiness
 
 
@@ -27,6 +28,7 @@ def _live_atlas_drivers(atlas) -> set[str]:
 
 
 @websocket_api.websocket_command({vol.Required("type"): "hydroponic_system/config/get"})
+@websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_get_config(hass, connection, msg) -> None:
     """Return the complete compact profile document."""
@@ -38,10 +40,15 @@ async def websocket_get_config(hass, connection, msg) -> None:
     readiness = cultivation_readiness(
         entities, store.data.get("hardware", {}), _live_atlas_drivers(atlas)
     )
+    cultivation = store.active_cultivation or empty_cultivation_view()
     connection.send_result(
         msg["id"],
         {
             **store.data,
+            "cultivation": cultivation,
+            "calendar": store.active_calendar(),
+            "cultivation_history": store.cultivation_history(),
+            "journal_integrity": store.journal_diagnostic,
             "hardware_config": store.data.get("hardware", {}),
             "entities": entities,
             "configured_entities": configured,
@@ -100,8 +107,8 @@ async def websocket_save_profile(hass, connection, msg) -> None:
     except ValueError as err:
         connection.send_error(msg["id"], "invalid_stage", str(err))
         return
-    cultivation = store.data.get("cultivation", {})
-    if cultivation.get("active"):
+    cultivation = store.active_cultivation
+    if cultivation is not None:
         for block in cultivation.get("plan", []):
             if block.get("stage") == msg["stage"]:
                 block["planned_days"] = max(1, min(365, int(profile["planned_days"])))
@@ -121,18 +128,21 @@ async def websocket_save_profile(hass, connection, msg) -> None:
 async def websocket_select_stage(hass, connection, msg) -> None:
     """Select a stage for an active cultivation."""
     store = hass.data[DOMAIN]["store"]
-    cultivation = store.data.get("cultivation", {})
-    if not cultivation.get("active"):
+    if store.active_cultivation is None:
         connection.send_error(
             msg["id"], "no_active_cultivation",
             "A stage cannot be activated before cultivation starts",
         )
         return
-    store.data["active_stage"] = msg["stage"]
-    transitions = cultivation.setdefault("transitions", [])
-    if not transitions or transitions[-1].get("stage") != msg["stage"]:
-        transitions.append({"stage": msg["stage"], "date": date.today().isoformat()})
-    await store.async_save()
+    try:
+        await store.async_select_stage(
+            msg["stage"],
+            local_date=dt_util.now().date().isoformat(),
+            created_by=str(getattr(connection.user, "id", "")),
+        )
+    except ValueError as err:
+        connection.send_error(msg["id"], "stage_transition_failed", str(err))
+        return
     connection.send_result(msg["id"], {"active_stage": msg["stage"]})
 
 
@@ -141,6 +151,8 @@ async def websocket_select_stage(hass, connection, msg) -> None:
         vol.Required("type"): "hydroponic_system/cultivation/start",
         vol.Optional("name", default=""): str,
         vol.Optional("start_date", default=""): str,
+        vol.Optional("identity", default={}): dict,
+        vol.Optional("cultivation_id"): str,
     }
 )
 @websocket_api.require_admin
@@ -148,14 +160,22 @@ async def websocket_select_stage(hass, connection, msg) -> None:
 async def websocket_start_cultivation(hass, connection, msg) -> None:
     """Start a dated cultivation journal without forcing stage transitions."""
     store = hass.data[DOMAIN]["store"]
-    if store.data.get("cultivation", {}).get("active"):
+    if store.active_cultivation is not None:
+        if msg.get("cultivation_id") == store.active_cultivation.get("id"):
+            await store.async_save()
+            connection.send_result(msg["id"], store.active_cultivation)
+            return
         connection.send_error(msg["id"], "already_active", "A cultivation is already active")
         return
-    start_date = msg.get("start_date") or date.today().isoformat()
+    today = dt_util.now().date()
+    start_date = msg.get("start_date") or today.isoformat()
     try:
-        date.fromisoformat(start_date)
+        parsed_start = date.fromisoformat(start_date)
     except ValueError:
         connection.send_error(msg["id"], "invalid_date", "Start date must be YYYY-MM-DD")
+        return
+    if parsed_start > today:
+        connection.send_error(msg["id"], "invalid_date", "Start date cannot be in the future")
         return
     plan = []
     defaults_by_stage = {item["stage"]: item for item in DEFAULT_CULTIVATION_PLAN}
@@ -166,37 +186,111 @@ async def websocket_start_cultivation(hass, connection, msg) -> None:
             **defaults,
             "planned_days": max(1, min(365, int(profile["planned_days"]))),
         })
-    cultivation = {
-        "active": True,
-        "id": uuid4().hex,
-        "name": (msg.get("name") or f"Yetiştirme · {start_date}")[:80],
-        "start_date": start_date,
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "completed_at": "",
-        "plan": plan,
-        "transitions": [{"stage": "germination", "date": start_date}],
-        "journal": {},
-    }
-    store.data["cultivation"] = cultivation
-    store.data["active_stage"] = "germination"
-    await store.async_save()
+    try:
+        cultivation = new_cultivation(
+            name=msg.get("name", ""),
+            start_date=start_date,
+            identity=msg.get("identity", {}),
+            plan=plan,
+            cultivation_id=msg.get("cultivation_id"),
+        )
+        if not cultivation["identity"]["plant_species"]:
+            raise ValueError("Plant species is required")
+        cultivation = await store.async_start_cultivation(
+            cultivation, created_by=str(getattr(connection.user, "id", ""))
+        )
+    except (TypeError, ValueError) as err:
+        connection.send_error(msg["id"], "invalid_cultivation", str(err))
+        return
     connection.send_result(msg["id"], cultivation)
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "hydroponic_system/cultivation/finish"}
+    {
+        vol.Required("type"): "hydroponic_system/cultivation/finish",
+        vol.Optional("cultivation_id"): str,
+    }
 )
 @websocket_api.require_admin
 @websocket_api.async_response
 async def websocket_finish_cultivation(hass, connection, msg) -> None:
     """Finish the active cultivation while retaining its journal."""
     store = hass.data[DOMAIN]["store"]
-    cultivation = store.data.setdefault("cultivation", {})
-    cultivation["active"] = False
-    cultivation["completed_at"] = datetime.now(timezone.utc).isoformat()
-    store.data["active_stage"] = None
-    await store.async_save()
+    if store.active_cultivation is None and msg.get("cultivation_id"):
+        archived = store.data.get("cultivations", {}).get("records", {}).get(
+            msg["cultivation_id"]
+        )
+        if archived is not None and not archived.get("active"):
+            await store.async_save()
+            connection.send_result(msg["id"], archived)
+            return
+    try:
+        cultivation = await store.async_finish_cultivation(
+            local_date=dt_util.now().date().isoformat(),
+            created_by=str(getattr(connection.user, "id", ""))
+        )
+    except ValueError as err:
+        connection.send_error(msg["id"], "no_active_cultivation", str(err))
+        return
     connection.send_result(msg["id"], cultivation)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "hydroponic_system/cultivation/event/add",
+        vol.Required("event_type"): vol.In(USER_EVENT_TYPES),
+        vol.Required("local_date"): str,
+        vol.Optional("note", default=""): str,
+        vol.Optional("values", default={}): dict,
+        vol.Optional("event_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_add_cultivation_event(hass, connection, msg) -> None:
+    """Append one immutable daily event to the active cultivation."""
+    store = hass.data[DOMAIN]["store"]
+    cultivation = store.active_cultivation
+    if cultivation is None:
+        connection.send_error(msg["id"], "no_active_cultivation", "There is no active cultivation")
+        return
+    try:
+        local_date = date.fromisoformat(msg["local_date"])
+        start_date = date.fromisoformat(cultivation["start_date"])
+    except (TypeError, ValueError):
+        connection.send_error(msg["id"], "invalid_date", "Event date must be YYYY-MM-DD")
+        return
+    if not start_date <= local_date <= dt_util.now().date():
+        connection.send_error(
+            msg["id"],
+            "invalid_date",
+            "Event date must be between cultivation start and today",
+        )
+        return
+    try:
+        event = await store.async_append_event(
+            event_type=msg["event_type"],
+            local_date=local_date.isoformat(),
+            note=msg.get("note", ""),
+            values=msg.get("values", {}),
+            created_by=str(getattr(connection.user, "id", "")),
+            event_id=msg.get("event_id"),
+        )
+    except (TypeError, ValueError) as err:
+        connection.send_error(msg["id"], "invalid_event", str(err))
+        return
+    connection.send_result(msg["id"], event)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "hydroponic_system/cultivation/export"}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_export_cultivations(hass, connection, msg) -> None:
+    """Return every cultivation and event in a checksummed JSON document."""
+    store = hass.data[DOMAIN]["store"]
+    connection.send_result(msg["id"], store.export_journal())
 
 
 def _address(value) -> int:
@@ -298,12 +392,14 @@ async def websocket_save_hardware(hass, connection, msg) -> None:
                     )
                     if fluid_id != "unassigned" and fluid_id not in fluid_ids:
                         raise ValueError(f"Unknown dosing fluid: {fluid_id}")
+                    calibration = _motor_calibration(channel.get("calibration"))
                     channels.append({
                         "id": channel_id,
                         "name": str(channel.get("name") or f"Motor {channel_id}")[:64],
                         "fluid_id": fluid_id,
                         "pump": _pump_profile(channel.get("pump")),
-                        "calibration": _motor_calibration(channel.get("calibration")),
+                        "calibration": calibration,
+                        "calibration_status": "measured" if calibration else "unverified",
                     })
                 assignment["channels"] = channels
             assignments.append(assignment)
@@ -552,6 +648,8 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_select_stage)
     websocket_api.async_register_command(hass, websocket_start_cultivation)
     websocket_api.async_register_command(hass, websocket_finish_cultivation)
+    websocket_api.async_register_command(hass, websocket_add_cultivation_event)
+    websocket_api.async_register_command(hass, websocket_export_cultivations)
     websocket_api.async_register_command(hass, websocket_save_hardware)
     websocket_api.async_register_command(hass, websocket_motor_test)
     websocket_api.async_register_command(hass, websocket_calibration_status)

@@ -53,8 +53,10 @@ CONTROL_KEYS = (
 )
 STORAGE_KEY = f"{DOMAIN}.profiles"
 STORAGE_VERSION = 1
+JOURNAL_RECOVERY_STORAGE_KEY = f"{DOMAIN}.journal_recovery"
+JOURNAL_RECOVERY_STORAGE_VERSION = 1
 PANEL_URL = "/hydroponic-system-static/hydroponic-system-panel.js"
-PANEL_MODULE_URL = f"{PANEL_URL}?v=0.24.9"
+PANEL_MODULE_URL = f"{PANEL_URL}?v=0.25.0"
 PANEL_PATH = "hydroponic-system"
 PANEL_COMPONENT = "hydroponic-system-panel"
 

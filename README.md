@@ -2,19 +2,24 @@
 
 Home Assistant profile manager and dedicated control surface for a staged indoor grow system.
 
-## Current scope (0.9.0)
+## Current scope (0.25.0)
+
+- Stores every cultivation under a permanent unique ID; starting a new cultivation does not replace completed history.
+- Keeps an append-only event journal for stage transitions, notes, water work, nutrient/pH doses, reservoir volume, calibration, maintenance, photos, alarms, and future read-only assistant records.
+- Mirrors the complete cultivation journal to a second Home Assistant storage document and can download a checksummed JSON backup from the Calendar tab.
+- Captures plant species, cultivar, source, plant count, grow method, reservoir/system volume, photoperiod source, nutrient program, start date, and notes when cultivation starts.
 
 - Optionally discovers Atlas Scientific EZO pH, EC, DO, and RTD circuits directly on Raspberry Pi I2C bus 1.
 - Creates native Home Assistant sensor entities and polls them locally every 30 seconds.
 - Shows `/dev/i2c-1` availability, discovered circuit addresses, types, and firmware in the panel Settings tab.
-- Keeps native hardware support read-only; Motor HATs and dosing pumps cannot be actuated in this release.
+- Keeps automatic hardware control disabled; administrators can run an explicitly confirmed, bounded 1-30 second Motor HAT calibration test.
 - Separates read-only I2C discovery candidates from enrolled devices; nothing is activated until the user adds it.
 - Provides one device list plus a discovery/add pane without vendor-specific auto-enable toggles.
 - Supports persistent manual I2C addresses and a 10-300 second polling interval.
 - Exposes guarded pH, EC, DO, and RTD calibration commands after an explicit confirmation.
 - Discovers PCA9685 Motor HATs at `0x40`-`0x4f` using register reads only and lists them with outputs locked.
 
-- Stores five profiles in one Home Assistant storage document.
+- Stores six editable example stage profiles in one Home Assistant storage document.
 - Provides a dedicated responsive profile editor panel.
 - Uses Home Assistant cards, controls, spacing, and theme variables in the panel.
 - Provides Overview, Profiles, and Settings tabs directly inside the panel.
@@ -41,13 +46,19 @@ Home Assistant profile manager and dedicated control surface for a staged indoor
 5. Restart Home Assistant.
 6. Add **Hydroponic System** from Settings → Devices & services.
 
-The **Hydroponic System** panel is registered automatically. No YAML or SSH access is required after HACS installs the integration.
+The **Hydroponic System** panel is registered automatically. Monitoring through existing Home Assistant entities requires no YAML or SSH access after installation. Direct local I2C still requires the host to expose the selected `/dev/i2c-N` device to Home Assistant Core.
 
 ## Manual development install
 
 Copy `custom_components/hydroponic_system` into Home Assistant's `config/custom_components` directory, restart Home Assistant, and add the integration from Settings → Devices & services.
 
-The profile editor and entity mappings are intentionally separate from the control engine. Saving a profile, selecting a stage, or mapping equipment in version 0.7.0 does not operate equipment.
+The profile editor and entity mappings are intentionally separate from the control engine. Saving a profile, selecting a stage, adding a journal event, or mapping equipment in version 0.25.0 does not operate equipment.
+
+## Journal durability
+
+The integration writes cultivation records and append-only events to the primary Home Assistant storage document and a checksummed recovery document. Completed cultivations remain in the archive when another cultivation starts. The Calendar tab can also download the complete journal as checksummed JSON.
+
+These protections cover application errors and accidental replacement. They cannot protect against loss of the entire storage device, so keep regular Home Assistant backups and download the journal JSON to another device periodically.
 
 ## Raspberry Pi 5 and native Atlas I2C
 
