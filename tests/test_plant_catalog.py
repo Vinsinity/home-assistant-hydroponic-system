@@ -3,6 +3,7 @@
 from copy import deepcopy
 from collections import Counter
 import importlib.util
+import json
 from pathlib import Path
 import sys
 
@@ -163,6 +164,24 @@ def test_builtin_cultivar_can_be_disabled_without_being_deleted():
     )
     assert migrated["active"] is False
     assert migrated["built_in"] is True
+
+
+def test_cultivation_snapshot_keeps_only_selected_genetics_and_profile():
+    plant = plant_catalog.DEFAULT_PLANTS["cannabis"]
+    cultivar = next(
+        item for item in plant["cultivars"]
+        if item["id"] == "rqs_northern_light_auto"
+    )
+
+    snapshot = plant_catalog.cultivation_plant_snapshot(
+        plant, cultivar, catalog_version="2026.08.26"
+    )
+
+    assert snapshot["profile"] == plant["profile"]
+    assert snapshot["cultivars"] == [cultivar]
+    assert snapshot["catalog_version"] == "2026.08.26"
+    assert len(json.dumps(snapshot, ensure_ascii=False).encode()) < 16_384
+    assert len(plant["cultivars"]) == 249
 
 
 def test_profile_values_are_bounded_and_ranges_are_ordered():

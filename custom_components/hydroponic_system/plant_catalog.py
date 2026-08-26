@@ -665,6 +665,17 @@ def make_custom_plant_record(plant_id: str, name: str) -> dict[str, Any]:
     )
 
 
+def cultivation_plant_snapshot(
+    record: Any, cultivar: Any = None, *, catalog_version: str = ""
+) -> dict[str, Any]:
+    """Copy one plant profile without embedding the full cultivar library."""
+    snapshot = deepcopy(record) if isinstance(record, dict) else {}
+    selected = deepcopy(cultivar) if isinstance(cultivar, dict) else None
+    snapshot["cultivars"] = [selected] if selected else []
+    snapshot["catalog_version"] = _text(catalog_version, 32)
+    return snapshot
+
+
 def plant_plan(record: Any) -> list[dict[str, Any]]:
     """Build the stage calendar plan for a selected plant profile."""
     normalized = normalize_plant_record(record)

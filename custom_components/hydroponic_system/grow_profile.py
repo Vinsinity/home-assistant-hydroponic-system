@@ -290,6 +290,11 @@ def build_assistant_prompt(
                 if isinstance(cultivation.get("plant_profile_snapshot"), dict)
                 else {}
             ),
+            "nutrient_program": (
+                cultivation.get("nutrient_program_snapshot", {})
+                if isinstance(cultivation.get("nutrient_program_snapshot"), dict)
+                else {}
+            ),
         },
         "system": normalize_system_profile(
             cultivation.get("system_snapshot") or system_profile

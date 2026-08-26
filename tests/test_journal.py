@@ -53,6 +53,14 @@ def _record(record_id: str, start_date: str):
             "breeder": {"id": "example_breeder", "name": "Example Breeder"},
             "cultivar": {"id": "example_marmande", "name": "Marmande"},
         },
+        nutrient_program_snapshot={
+            "name": "Base program",
+            "nutrient_ids": ["base_a", "base_b"],
+            "products": [
+                {"id": "base_a", "name": "Base A"},
+                {"id": "base_b", "name": "Base B"},
+            ],
+        },
         cultivation_id=record_id,
         timestamp=f"{start_date}T08:00:00+00:00",
     )
@@ -97,26 +105,40 @@ def test_cultivation_keeps_its_system_snapshot_in_record_and_start_event():
     assert started["data"]["plant_profile_snapshot"] == record["plant_profile_snapshot"]
     assert record["genetics_snapshot"]["breeder"]["name"] == "Example Breeder"
     assert started["data"]["genetics_snapshot"] == record["genetics_snapshot"]
+    assert record["nutrient_program_snapshot"]["nutrient_ids"] == ["base_a", "base_b"]
+    assert started["data"]["nutrient_program_snapshot"] == record["nutrient_program_snapshot"]
     assert record["identity"]["cultivar_id"] == "example_marmande"
 
 
-def test_first_enabled_plant_stage_becomes_initial_stage():
+def test_selected_enabled_plant_stage_becomes_initial_stage():
     data = _data()
     record = journal.new_cultivation(
         name="Transplant grow",
         start_date="2026-08-01",
         identity={"plant_species": "Lettuce"},
         plan=[{"stage": "early_veg", "planned_days": 7}, {"stage": "veg", "planned_days": 21}],
+        initial_stage="veg",
         cultivation_id="transplant",
         timestamp="2026-08-01T08:00:00+00:00",
     )
 
     journal.start_cultivation(data, record)
 
-    assert data["active_stage"] == "early_veg"
-    assert record["transitions"][0]["stage"] == "early_veg"
+    assert data["active_stage"] == "veg"
+    assert record["transitions"][0]["stage"] == "veg"
     transition = next(event for event in data["events"] if event["type"] == "stage_transition")
-    assert transition["data"]["stage"] == "early_veg"
+    assert transition["data"]["stage"] == "veg"
+
+
+def test_initial_stage_must_exist_in_enabled_plan():
+    with pytest.raises(ValueError, match="Initial stage"):
+        journal.new_cultivation(
+            name="Invalid stage",
+            start_date="2026-08-01",
+            identity={"plant_species": "Lettuce"},
+            plan=[{"stage": "germination", "planned_days": 7}],
+            initial_stage="bloom",
+        )
 
 
 def test_events_are_append_only_and_duplicate_ids_are_rejected():

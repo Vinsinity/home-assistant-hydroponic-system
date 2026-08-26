@@ -72,6 +72,10 @@ def test_assistant_prompt_marks_user_data_and_forbids_actions():
                 "id": "tomato",
                 "profile": {"kind": "editable_example"},
             },
+            "nutrient_program_snapshot": {
+                "name": "Tomato base",
+                "products": [{"id": "base_a", "name": "Base A"}],
+            },
             "system_snapshot": {},
         },
         active_stage="germination",
@@ -91,6 +95,7 @@ def test_assistant_prompt_marks_user_data_and_forbids_actions():
     assert "GROW_DATA_BEGIN" in prompt
     assert "Roots visible" in prompt
     assert '"id": "tomato"' in prompt
+    assert '"name": "Tomato base"' in prompt
 
 
 def test_context_summary_reports_missing_data_plainly():

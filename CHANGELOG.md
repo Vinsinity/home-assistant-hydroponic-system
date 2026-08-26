@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.31.0
+
+- Move Connections, Plant Library, profiles, nutrients, hardware, and dosing into dedicated nested routes beneath Setup while keeping the daily navigation compact.
+- Replace the sparse cultivation dialog with a four-step start flow covering plant/genetics, editable example targets and initial stage, nutrient program/products, cabin/water/light context, and final review.
+- Snapshot the chosen nutrient products and program into the cultivation and immutable start event without issuing any dose or equipment command.
+- Preserve only the selected cultivar in each cultivation snapshot so the 249-record Cannabis catalog cannot exceed journal record limits; the complete editable catalog remains in Plant Library storage.
+- Migrate the append-only journal to schema 5 without replacing existing cultivations or events.
+
 ## 0.30.0
 
 - Move the built-in Cannabis offerings into a separate, versioned catalog snapshot instead of embedding a short list in Python code.

@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 
-JOURNAL_SCHEMA_VERSION = 4
+JOURNAL_SCHEMA_VERSION = 5
 
 EVENT_TYPES = frozenset(
     {
@@ -99,6 +99,7 @@ def empty_cultivation_view() -> dict[str, Any]:
         "system_snapshot": {},
         "plant_profile_snapshot": {},
         "genetics_snapshot": {},
+        "nutrient_program_snapshot": {},
         "start_date": "",
         "started_at": "",
         "completed_at": "",
@@ -266,6 +267,12 @@ def _normalize_record(record: dict[str, Any], record_id: str) -> dict[str, Any]:
         else {},
         maximum_bytes=16_384,
     )
+    result["nutrient_program_snapshot"] = _bounded_json(
+        result.get("nutrient_program_snapshot")
+        if isinstance(result.get("nutrient_program_snapshot"), dict)
+        else {},
+        maximum_bytes=32_768,
+    )
     result["plan"] = deepcopy(result.get("plan") if isinstance(result.get("plan"), list) else [])
     result["transitions"] = deepcopy(
         result.get("transitions") if isinstance(result.get("transitions"), list) else []
@@ -282,6 +289,8 @@ def new_cultivation(
     system_snapshot: dict[str, Any] | None = None,
     plant_profile_snapshot: dict[str, Any] | None = None,
     genetics_snapshot: dict[str, Any] | None = None,
+    nutrient_program_snapshot: dict[str, Any] | None = None,
+    initial_stage: str | None = None,
     cultivation_id: str | None = None,
     timestamp: str | None = None,
 ) -> dict[str, Any]:
@@ -291,7 +300,10 @@ def new_cultivation(
     record_id = str(cultivation_id or uuid4().hex)
     if len(record_id) > 64 or not record_id.replace("-", "").replace("_", "").isalnum():
         raise ValueError("Cultivation id must be 1-64 letters, digits, hyphens, or underscores")
-    initial_stage = str(plan[0].get("stage") or "germination") if plan else "germination"
+    enabled_stages = [str(item.get("stage") or "") for item in plan if item.get("stage")]
+    initial_stage = str(initial_stage or (enabled_stages[0] if enabled_stages else "germination"))
+    if enabled_stages and initial_stage not in enabled_stages:
+        raise ValueError("Initial stage must be enabled in the cultivation plan")
     return {
         "active": True,
         "id": record_id,
@@ -303,6 +315,9 @@ def new_cultivation(
         ),
         "genetics_snapshot": _bounded_json(
             genetics_snapshot or {}, maximum_bytes=16_384
+        ),
+        "nutrient_program_snapshot": _bounded_json(
+            nutrient_program_snapshot or {}, maximum_bytes=32_768
         ),
         "start_date": start_date,
         "started_at": timestamp,
@@ -361,9 +376,11 @@ def start_cultivation(
                 "system_snapshot": record.get("system_snapshot", {}),
                 "plant_profile_snapshot": record.get("plant_profile_snapshot", {}),
                 "genetics_snapshot": record.get("genetics_snapshot", {}),
+                "nutrient_program_snapshot": record.get("nutrient_program_snapshot", {}),
             },
             created_by=created_by,
             created_at=record["started_at"],
+            maximum_data_bytes=65_536,
         ),
     )
     transition = make_event(

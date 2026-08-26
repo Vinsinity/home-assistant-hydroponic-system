@@ -31,7 +31,7 @@ from .journal import (
     new_cultivation,
 )
 from .readiness import cultivation_readiness
-from .plant_catalog import GENERIC_PLANT, plant_plan
+from .plant_catalog import GENERIC_PLANT, cultivation_plant_snapshot, plant_plan
 
 
 def _live_atlas_drivers(atlas) -> set[str]:
@@ -419,6 +419,9 @@ async def websocket_select_stage(hass, connection, msg) -> None:
         vol.Optional("start_date", default=""): str,
         vol.Optional("identity", default={}): dict,
         vol.Optional("plant_profile_id", default=""): str,
+        vol.Optional("initial_stage", default=""): str,
+        vol.Optional("nutrient_program_name", default=""): str,
+        vol.Optional("nutrient_ids", default=[]): list,
         vol.Optional("cultivation_id"): str,
     }
 )
@@ -568,6 +571,45 @@ async def websocket_start_cultivation(hass, connection, msg) -> None:
         }),
         "source": str(identity.get("source") or "")[:160],
     }
+    fluid_records = {
+        str(item.get("id")): item
+        for item in store.data.get("hardware", {}).get("dosing_fluids", [])
+        if isinstance(item, dict)
+        and item.get("id")
+        and item.get("id") not in {"ph_up", "ph_down"}
+        and item.get("category") not in {"ph", "ph_up", "ph_down"}
+    }
+    requested_nutrient_ids = list(dict.fromkeys(
+        str(item) for item in msg.get("nutrient_ids", []) if isinstance(item, str)
+    ))
+    unknown_nutrient_ids = [
+        item for item in requested_nutrient_ids if item not in fluid_records
+    ]
+    if unknown_nutrient_ids:
+        connection.send_error(
+            msg["id"], "nutrient_not_found", "A selected nutrient product was not found"
+        )
+        return
+    nutrient_products = [
+        deepcopy(fluid_records[item]) for item in requested_nutrient_ids
+    ]
+    nutrient_program_name = str(
+        msg.get("nutrient_program_name")
+        or identity.get("nutrient_program")
+        or " · ".join(item.get("name", "") for item in nutrient_products)
+    )[:160]
+    identity["nutrient_program"] = nutrient_program_name
+    nutrient_program_snapshot = {
+        "name": nutrient_program_name,
+        "nutrient_ids": requested_nutrient_ids,
+        "products": nutrient_products,
+        "source": "grow_start",
+    }
+    plant_profile_snapshot = cultivation_plant_snapshot(
+        selected_plant,
+        cultivar,
+        catalog_version=str(catalog.get("catalog_version") or ""),
+    )
     try:
         plan = plant_plan(selected_plant)
         cultivation = new_cultivation(
@@ -578,8 +620,10 @@ async def websocket_start_cultivation(hass, connection, msg) -> None:
             system_snapshot=normalize_system_profile(
                 store.data.get("system_profile")
             ),
-            plant_profile_snapshot=selected_plant,
+            plant_profile_snapshot=plant_profile_snapshot,
             genetics_snapshot=genetics_snapshot,
+            nutrient_program_snapshot=nutrient_program_snapshot,
+            initial_stage=msg.get("initial_stage") or None,
             cultivation_id=msg.get("cultivation_id"),
         )
         if not cultivation["identity"]["plant_species"]:
