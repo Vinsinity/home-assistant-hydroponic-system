@@ -85,6 +85,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN].pop("configured_entities", None)
     hass.data[DOMAIN].pop("entities", None)
     hass.data[DOMAIN].pop("sensor_runtime", None)
+    hass.data[DOMAIN].pop("sensor_health_runtime", None)
     coordinator = hass.data[DOMAIN].pop("atlas_i2c", None)
     if coordinator is not None:
         await coordinator.async_shutdown()

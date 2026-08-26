@@ -136,3 +136,40 @@ def test_store_removes_the_old_unmeasured_one_ml_placeholder():
 
     assert channel["calibration"] is None
     assert channel["calibration_status"] == "unverified"
+
+
+def test_sensor_health_settings_save_keeps_journal_and_recovery_intact():
+    FakeStore.documents = {}
+    store = store_module.HydroponicSystemStore(object())
+    asyncio.run(store.async_load())
+    record = journal.new_cultivation(
+        name="Protected grow",
+        start_date="2026-08-20",
+        identity={"plant_species": "Tomato"},
+        plan=[{"stage": "germination", "planned_days": 6}],
+        cultivation_id="protected_grow",
+    )
+    asyncio.run(store.async_start_cultivation(record))
+    asyncio.run(store.async_append_event(
+        event_type="user_note",
+        local_date="2026-08-21",
+        note="Must survive settings changes",
+        values={},
+        event_id="protected_event",
+    ))
+
+    asyncio.run(store.async_update_sensor_health_settings({
+        "default_stale_after_seconds": 180,
+        "calibration_due_days": 21,
+        "sensors": {"sensor.ph": {"calibrated_at": "2026-08-20"}},
+    }))
+
+    primary = FakeStore.documents[const.STORAGE_KEY]
+    recovery = FakeStore.documents[const.JOURNAL_RECOVERY_STORAGE_KEY]
+    assert primary["sensor_health_settings"]["calibration_due_days"] == 21
+    assert any(item["id"] == "protected_event" for item in primary["events"])
+    assert any(
+        item["id"] == "protected_event"
+        for item in recovery["payload"]["events"]
+    )
+    assert recovery["checksum"] == journal.journal_checksum(recovery["payload"])

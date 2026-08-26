@@ -14,6 +14,7 @@ from .const import CONTROL_KEYS, DEFAULT_CULTIVATION_PLAN, DEFAULT_DOSING_POLICY
 from .entity_map import resolve_entities
 from .journal import USER_EVENT_TYPES, empty_cultivation_view, new_cultivation
 from .readiness import cultivation_readiness
+from .sensor_health import sensor_health_snapshot
 
 
 def _live_atlas_drivers(atlas) -> set[str]:
@@ -25,6 +26,23 @@ def _live_atlas_drivers(atlas) -> set[str]:
         for device in atlas.devices
         if device.key in (atlas.data or {})
     }
+
+
+def _health_snapshot(hass: HomeAssistant) -> dict:
+    """Build one read-only health view from the current integration state."""
+    domain_data = hass.data[DOMAIN]
+    store = domain_data["store"]
+    stage = store.data.get("active_stage") if store.active_cultivation else None
+    profile = store.data.get("profiles", {}).get(stage) if stage else None
+    return sensor_health_snapshot(
+        hass,
+        domain_data.get("entities", {}),
+        atlas=domain_data.get("atlas_i2c"),
+        profile=profile,
+        active_cultivation=store.active_cultivation is not None,
+        settings=store.data.get("sensor_health_settings", {}),
+        runtime=domain_data.setdefault("sensor_health_runtime", {}),
+    )
 
 
 @websocket_api.websocket_command({vol.Required("type"): "hydroponic_system/config/get"})
@@ -41,6 +59,7 @@ async def websocket_get_config(hass, connection, msg) -> None:
         entities, store.data.get("hardware", {}), _live_atlas_drivers(atlas)
     )
     cultivation = store.active_cultivation or empty_cultivation_view()
+    health = _health_snapshot(hass)
     connection.send_result(
         msg["id"],
         {
@@ -53,6 +72,7 @@ async def websocket_get_config(hass, connection, msg) -> None:
             "entities": entities,
             "configured_entities": configured,
             "cultivation_readiness": readiness,
+            "sensor_health": health,
             "hardware": {
                 "atlas_i2c": atlas.diagnostic if atlas is not None else {
                     "available": False,
@@ -61,6 +81,87 @@ async def websocket_get_config(hass, connection, msg) -> None:
             },
         },
     )
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "hydroponic_system/sensor_health/get"}
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_get_sensor_health(hass, connection, msg) -> None:
+    """Return a fresh sensor-health snapshot without reloading panel config."""
+    connection.send_result(msg["id"], _health_snapshot(hass))
+
+
+def _clean_sensor_health_settings(current: dict, incoming: dict) -> dict:
+    """Validate health settings while preserving server-owned calibration details."""
+    stale_after = max(30, min(86400, int(incoming.get(
+        "default_stale_after_seconds",
+        current.get("default_stale_after_seconds", 300),
+    ))))
+    due_days = max(1, min(3650, int(incoming.get(
+        "calibration_due_days", current.get("calibration_due_days", 30),
+    ))))
+    existing = (
+        current.get("sensors", {})
+        if isinstance(current.get("sensors"), dict) else {}
+    )
+    requested = incoming.get("sensors", {})
+    if not isinstance(requested, dict) or len(requested) > 256:
+        raise ValueError("sensors must be an object with at most 256 entries")
+    sensors = {}
+    for source_id, value in requested.items():
+        if not isinstance(source_id, str) or not source_id or len(source_id) > 255:
+            raise ValueError("Invalid sensor source id")
+        if not isinstance(value, dict):
+            raise ValueError(f"Invalid settings for {source_id}")
+        sensor = dict(existing.get(source_id, {}))
+        calibrated_at = value.get("calibrated_at")
+        if calibrated_at:
+            try:
+                date.fromisoformat(str(calibrated_at)[:10])
+            except ValueError as err:
+                raise ValueError(f"Invalid calibration date for {source_id}") from err
+            sensor["calibrated_at"] = str(calibrated_at)
+        elif "calibrated_at" in value:
+            sensor.pop("calibrated_at", None)
+        sensor["stale_after_seconds"] = max(
+            30, min(86400, int(value.get("stale_after_seconds", stale_after)))
+        )
+        sensor["calibration_due_days"] = max(
+            1, min(3650, int(value.get("calibration_due_days", due_days)))
+        )
+        sensors[source_id] = sensor
+    # Retain metadata for temporarily unavailable or currently unmapped probes.
+    for source_id, value in existing.items():
+        sensors.setdefault(source_id, value)
+    return {
+        "default_stale_after_seconds": stale_after,
+        "calibration_due_days": due_days,
+        "sensors": sensors,
+    }
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "hydroponic_system/sensor_health/settings/save",
+        vol.Required("values"): dict,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_save_sensor_health_settings(hass, connection, msg) -> None:
+    """Persist freshness and calibration metadata; never mutate sensor state."""
+    store = hass.data[DOMAIN]["store"]
+    try:
+        clean = _clean_sensor_health_settings(
+            store.data.get("sensor_health_settings", {}), msg["values"]
+        )
+        result = await store.async_update_sensor_health_settings(clean)
+    except (TypeError, ValueError) as err:
+        connection.send_error(msg["id"], "invalid_sensor_health_settings", str(err))
+        return
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command(
@@ -566,6 +667,20 @@ async def websocket_calibrate(hass, connection, msg) -> None:
         result = await hass.data[DOMAIN]["atlas_i2c"].async_calibrate(
             address, msg["operation"], msg.get("value")
         )
+        atlas = hass.data[DOMAIN]["atlas_i2c"]
+        device = next(item for item in atlas.devices if item.address == address)
+        measurement = {
+            "ph": "ph", "do": "dissolved_oxygen", "ec": "nutrient",
+            "rtd": "water_temperature",
+        }[str(device.device_type).lower()]
+        source_id = f"atlas_i2c:{atlas.bus_number}:0x{address:02x}:{measurement}"
+        await hass.data[DOMAIN]["store"].async_record_sensor_calibration(
+            source_id,
+            calibrated_at=(
+                "" if msg["operation"] == "clear" else dt_util.utcnow().isoformat()
+            ),
+            operation=msg["operation"],
+        )
     except (TypeError, ValueError, OSError, RuntimeError) as err:
         connection.send_error(msg["id"], "calibration_failed", str(err))
         return
@@ -643,6 +758,8 @@ async def websocket_atlas_change_address(hass, connection, msg) -> None:
 def async_register(hass: HomeAssistant) -> None:
     """Register WebSocket commands."""
     websocket_api.async_register_command(hass, websocket_get_config)
+    websocket_api.async_register_command(hass, websocket_get_sensor_health)
+    websocket_api.async_register_command(hass, websocket_save_sensor_health_settings)
     websocket_api.async_register_command(hass, websocket_save_entities)
     websocket_api.async_register_command(hass, websocket_save_profile)
     websocket_api.async_register_command(hass, websocket_select_stage)

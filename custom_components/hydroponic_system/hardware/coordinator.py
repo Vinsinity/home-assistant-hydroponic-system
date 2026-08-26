@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 import logging
 from pathlib import Path
@@ -162,6 +162,7 @@ class AtlasI2CCoordinator(DataUpdateCoordinator[dict[str, dict]]):
                     "device_type": device.device_type,
                     "firmware": device.firmware,
                     "values": values,
+                    "observed_at": datetime.now(timezone.utc).isoformat(),
                 }
         finally:
             bus.close()
