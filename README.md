@@ -1,6 +1,23 @@
 # Hydroponic System
 
-Home Assistant profile manager and dedicated control surface for a staged indoor grow system.
+Standalone Raspberry Pi grow system in development, with the existing Home
+Assistant integration retained as a compatible adapter during migration.
+
+## Standalone Raspberry Pi core
+
+The repository now includes the first Home Assistant-independent core slice:
+
+- `growasist serve` starts a local, read-only HTTP service;
+- SQLite WAL storage keeps immutable journal events and full state revisions;
+- checksummed exports from the current Home Assistant panel can be merged with
+  `growasist import-ha` without treating missing events as deletions;
+- `growasist check` verifies storage integrity and `growasist backup` creates a
+  consistent database backup;
+- `Dockerfile` and `compose.yaml` provide the initial Raspberry Pi OS runtime.
+
+See [the standalone architecture](docs/STANDALONE_ARCHITECTURE.md) and
+[Raspberry Pi development guide](docs/RASPBERRY_PI.md). Automatic equipment
+control remains disabled in this slice.
 
 ## Current scope (0.32.0)
 

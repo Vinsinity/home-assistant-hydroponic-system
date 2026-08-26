@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Start the Home Assistant-independent GrowAsist Core for Raspberry Pi OS.
+- Add a read-only versioned HTTP service and Raspberry Pi-compatible container.
+- Add SQLite WAL persistence with full synchronous commits, immutable journal
+  event rows, immutable state revisions, checksum validation, and online backup.
+- Add checksummed Home Assistant journal import that merges historical records
+  and events instead of replacing them.
+- Keep the automatic control engine disabled while standalone device adapters
+  and deterministic safety rules are built.
+
 ## 0.32.0
 
 - Replace the Cabin name/location form with only grow-area dimensions and plant capacity.
