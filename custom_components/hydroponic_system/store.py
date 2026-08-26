@@ -41,6 +41,13 @@ from .journal import (
     start_cultivation,
     utc_now,
 )
+from .plant_catalog import (
+    GENERIC_PLANT,
+    default_plant_catalog,
+    make_custom_plant_record,
+    normalize_plant_catalog,
+    normalize_plant_record,
+)
 
 
 class HydroponicSystemStore:
@@ -62,6 +69,7 @@ class HydroponicSystemStore:
             "profiles": deepcopy(DEFAULT_PROFILES),
             "system_profile": deepcopy(DEFAULT_SYSTEM_PROFILE),
             "assistant_settings": deepcopy(DEFAULT_ASSISTANT_SETTINGS),
+            "plant_catalog": default_plant_catalog(),
             "cultivations": empty_cultivations(),
             "events": [],
             "hardware": {
@@ -95,9 +103,13 @@ class HydroponicSystemStore:
         self.data["assistant_settings"] = normalize_assistant_settings(
             stored.get("assistant_settings")
         )
+        self.data["plant_catalog"] = normalize_plant_catalog(
+            stored.get("plant_catalog")
+        )
         if (
             self.data["system_profile"] != stored.get("system_profile")
             or self.data["assistant_settings"] != stored.get("assistant_settings")
+            or self.data["plant_catalog"] != stored.get("plant_catalog")
         ):
             migrated = True
         stored_profiles = stored.get("profiles", {})
@@ -327,6 +339,7 @@ class HydroponicSystemStore:
             "cultivations": deepcopy(self.data.get("cultivations", empty_cultivations())),
             "events": deepcopy(self.data.get("events", [])),
             "current_system_profile": deepcopy(self.data.get("system_profile", {})),
+            "plant_catalog": deepcopy(self.data.get("plant_catalog", {})),
         }
         return {**payload, "checksum": journal_checksum(payload)}
 
@@ -369,6 +382,36 @@ class HydroponicSystemStore:
         self.data["assistant_settings"] = normalize_assistant_settings(values)
         await self.async_save()
         return deepcopy(self.data["assistant_settings"])
+
+    async def async_update_plant(
+        self, plant_id: str, values: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Create or update one persistent plant-library record."""
+        catalog = self.data.setdefault("plant_catalog", default_plant_catalog())
+        existing = catalog.setdefault("records", {}).get(plant_id)
+        fallback = existing or GENERIC_PLANT
+        record = normalize_plant_record(
+            values, plant_id=plant_id, fallback=fallback
+        )
+        if not record["name"]:
+            raise ValueError("Plant name is required")
+        catalog["records"][plant_id] = record
+        order = catalog.setdefault("order", [])
+        if plant_id not in order:
+            order.append(plant_id)
+        await self.async_save()
+        return deepcopy(record)
+
+    def ensure_custom_plant(self, plant_id: str, name: str) -> dict[str, Any]:
+        """Add a custom plant in memory; the cultivation save persists it atomically."""
+        catalog = self.data.setdefault("plant_catalog", default_plant_catalog())
+        records = catalog.setdefault("records", {})
+        if plant_id in records:
+            return deepcopy(records[plant_id])
+        record = make_custom_plant_record(plant_id, name)
+        records[plant_id] = record
+        catalog.setdefault("order", []).append(plant_id)
+        return deepcopy(record)
 
     async def async_update_hardware(self, values: dict[str, Any]) -> dict[str, Any]:
         """Persist validated native hardware preferences."""

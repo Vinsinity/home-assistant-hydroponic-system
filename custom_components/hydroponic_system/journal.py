@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 
-JOURNAL_SCHEMA_VERSION = 2
+JOURNAL_SCHEMA_VERSION = 3
 
 EVENT_TYPES = frozenset(
     {
@@ -60,7 +60,9 @@ AMOUNT_EVENT_UNITS = {
 }
 
 IDENTITY_DEFAULTS: dict[str, Any] = {
+    "plant_profile_id": "",
     "plant_species": "",
+    "botanical_name": "",
     "cultivar": "",
     "source": "",
     "plant_count": 1,
@@ -91,6 +93,7 @@ def empty_cultivation_view() -> dict[str, Any]:
         "name": "",
         "identity": deepcopy(IDENTITY_DEFAULTS),
         "system_snapshot": {},
+        "plant_profile_snapshot": {},
         "start_date": "",
         "started_at": "",
         "completed_at": "",
@@ -104,7 +107,9 @@ def normalize_identity(value: Any) -> dict[str, Any]:
     value = value if isinstance(value, dict) else {}
     result = deepcopy(IDENTITY_DEFAULTS)
     for key, maximum in (
+        ("plant_profile_id", 64),
         ("plant_species", 96),
+        ("botanical_name", 160),
         ("cultivar", 96),
         ("source", 160),
         ("growing_method", 64),
@@ -240,6 +245,12 @@ def _normalize_record(record: dict[str, Any], record_id: str) -> dict[str, Any]:
         if isinstance(result.get("system_snapshot"), dict)
         else {}
     )
+    result["plant_profile_snapshot"] = _bounded_json(
+        result.get("plant_profile_snapshot")
+        if isinstance(result.get("plant_profile_snapshot"), dict)
+        else {},
+        maximum_bytes=65_536,
+    )
     result["plan"] = deepcopy(result.get("plan") if isinstance(result.get("plan"), list) else [])
     result["transitions"] = deepcopy(
         result.get("transitions") if isinstance(result.get("transitions"), list) else []
@@ -254,6 +265,7 @@ def new_cultivation(
     identity: dict[str, Any],
     plan: list[dict[str, Any]],
     system_snapshot: dict[str, Any] | None = None,
+    plant_profile_snapshot: dict[str, Any] | None = None,
     cultivation_id: str | None = None,
     timestamp: str | None = None,
 ) -> dict[str, Any]:
@@ -263,19 +275,23 @@ def new_cultivation(
     record_id = str(cultivation_id or uuid4().hex)
     if len(record_id) > 64 or not record_id.replace("-", "").replace("_", "").isalnum():
         raise ValueError("Cultivation id must be 1-64 letters, digits, hyphens, or underscores")
+    initial_stage = str(plan[0].get("stage") or "germination") if plan else "germination"
     return {
         "active": True,
         "id": record_id,
         "name": str(name or f"Yetiştirme · {start_date}")[:80],
         "identity": normalize_identity(identity),
         "system_snapshot": _bounded_json(system_snapshot or {}),
+        "plant_profile_snapshot": _bounded_json(
+            plant_profile_snapshot or {}, maximum_bytes=65_536
+        ),
         "start_date": start_date,
         "started_at": timestamp,
         "completed_at": "",
         "created_at": timestamp,
         "updated_at": timestamp,
         "plan": deepcopy(plan),
-        "transitions": [{"stage": "germination", "date": start_date}],
+        "transitions": [{"stage": initial_stage, "date": start_date}],
     }
 
 
@@ -310,7 +326,10 @@ def start_cultivation(
     collection["records"][record_id] = deepcopy(record)
     collection.setdefault("order", []).append(record_id)
     collection["active_id"] = record_id
-    data["active_stage"] = "germination"
+    initial_stage = str(
+        record.get("transitions", [{}])[0].get("stage") or "germination"
+    )
+    data["active_stage"] = initial_stage
     append_event(
         data,
         make_event(
@@ -321,6 +340,7 @@ def start_cultivation(
             data={
                 "identity": record["identity"],
                 "system_snapshot": record.get("system_snapshot", {}),
+                "plant_profile_snapshot": record.get("plant_profile_snapshot", {}),
             },
             created_by=created_by,
             created_at=record["started_at"],
@@ -330,8 +350,8 @@ def start_cultivation(
         event_type="stage_transition",
         cultivation_id=record_id,
         local_date=record["start_date"],
-        note="Çimlenme",
-        data={"from_stage": None, "stage": "germination"},
+        note=initial_stage,
+        data={"from_stage": None, "stage": initial_stage},
         created_by=created_by,
         created_at=record["started_at"],
     )

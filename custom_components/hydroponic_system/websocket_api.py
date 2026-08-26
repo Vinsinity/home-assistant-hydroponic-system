@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date
+import hashlib
 import json
 
 import voluptuous as vol
@@ -12,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from .const import CONTROL_KEYS, DEFAULT_CULTIVATION_PLAN, DEFAULT_DOSING_POLICY, DOMAIN, SENSOR_KEYS, STAGE_ORDER
+from .const import CONTROL_KEYS, DEFAULT_DOSING_POLICY, DOMAIN, SENSOR_KEYS, STAGE_ORDER
 from .entity_map import resolve_entities
 from .grow_profile import (
     assistant_context_summary,
@@ -29,6 +31,7 @@ from .journal import (
     new_cultivation,
 )
 from .readiness import cultivation_readiness
+from .plant_catalog import GENERIC_PLANT, plant_plan
 
 
 def _live_atlas_drivers(atlas) -> set[str]:
@@ -72,6 +75,7 @@ async def websocket_get_config(hass, connection, msg) -> None:
         msg["id"],
         {
             **store.data,
+            "plant_catalog_template": deepcopy(GENERIC_PLANT),
             "cultivation": cultivation,
             "calendar": store.active_calendar(),
             "cultivation_history": store.cultivation_history(),
@@ -153,7 +157,7 @@ async def websocket_save_profile(hass, connection, msg) -> None:
         connection.send_error(msg["id"], "invalid_stage", str(err))
         return
     cultivation = store.active_cultivation
-    if cultivation is not None:
+    if cultivation is not None and not cultivation.get("plant_profile_snapshot"):
         for block in cultivation.get("plan", []):
             if block.get("stage") == msg["stage"]:
                 block["planned_days"] = max(1, min(365, int(profile["planned_days"])))
@@ -178,6 +182,26 @@ async def websocket_save_system_profile(hass, connection, msg) -> None:
         msg["id"],
         {"profile": profile, "status": system_profile_completeness(profile)},
     )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "hydroponic_system/plant_catalog/save",
+        vol.Required("plant_id"): str,
+        vol.Required("values"): dict,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def websocket_save_plant(hass, connection, msg) -> None:
+    """Create or update one editable plant-library profile."""
+    store = hass.data[DOMAIN]["store"]
+    try:
+        plant = await store.async_update_plant(msg["plant_id"], msg["values"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_plant", str(err))
+        return
+    connection.send_result(msg["id"], plant)
 
 
 @websocket_api.websocket_command(
@@ -236,10 +260,19 @@ async def websocket_generate_assistant_report(hass, connection, msg) -> None:
     sensor_summaries = normalize_sensor_summaries(msg.get("sensor_summaries"))
     cultivation_events = events_for_cultivation(store.data, cultivation["id"])
     stage = store.data.get("active_stage")
+    plant_snapshot = cultivation.get("plant_profile_snapshot", {})
+    plant_stage_profile = (
+        plant_snapshot.get("profile", {}).get("stages", {}).get(stage)
+        if isinstance(plant_snapshot, dict) and stage
+        else None
+    )
     prompt = build_assistant_prompt(
         cultivation=cultivation,
         active_stage=stage,
-        active_profile=store.data.get("profiles", {}).get(stage) if stage else None,
+        active_profile=(
+            plant_stage_profile
+            or (store.data.get("profiles", {}).get(stage) if stage else None)
+        ),
         system_profile=store.data.get("system_profile"),
         sensor_summaries=sensor_summaries,
         recent_events=cultivation_events,
@@ -336,6 +369,15 @@ async def websocket_select_stage(hass, connection, msg) -> None:
             "A stage cannot be activated before cultivation starts",
         )
         return
+    allowed_stages = {
+        item.get("stage") for item in store.active_cultivation.get("plan", [])
+    }
+    if msg["stage"] not in allowed_stages:
+        connection.send_error(
+            msg["id"], "stage_not_in_plant_profile",
+            "This stage is disabled in the cultivation plant profile",
+        )
+        return
     try:
         await store.async_select_stage(
             msg["stage"],
@@ -354,6 +396,7 @@ async def websocket_select_stage(hass, connection, msg) -> None:
         vol.Optional("name", default=""): str,
         vol.Optional("start_date", default=""): str,
         vol.Optional("identity", default={}): dict,
+        vol.Optional("plant_profile_id", default=""): str,
         vol.Optional("cultivation_id"): str,
     }
 )
@@ -379,24 +422,58 @@ async def websocket_start_cultivation(hass, connection, msg) -> None:
     if parsed_start > today:
         connection.send_error(msg["id"], "invalid_date", "Start date cannot be in the future")
         return
-    plan = []
-    defaults_by_stage = {item["stage"]: item for item in DEFAULT_CULTIVATION_PLAN}
-    for stage in STAGE_ORDER:
-        defaults = defaults_by_stage[stage]
-        profile = store.data["profiles"][stage]
-        plan.append({
-            **defaults,
-            "planned_days": max(1, min(365, int(profile["planned_days"]))),
-        })
+    identity = dict(msg.get("identity", {}))
+    catalog = store.data.get("plant_catalog", {})
+    records = catalog.get("records", {}) if isinstance(catalog, dict) else {}
+    requested_profile_id = str(msg.get("plant_profile_id") or "")
+    selected_plant = records.get(requested_profile_id) if requested_profile_id else None
+    if requested_profile_id and selected_plant is None:
+        connection.send_error(msg["id"], "plant_not_found", "Selected plant profile was not found")
+        return
+    if selected_plant is None:
+        species = str(identity.get("plant_species") or "").strip()
+        selected_plant = (
+            next(
+                (
+                    item for item in records.values()
+                    if species.casefold() in {
+                        str(item.get("name") or "").casefold(),
+                        str(item.get("english_name") or "").casefold(),
+                        str(item.get("botanical_name") or "").casefold(),
+                        *(str(alias).casefold() for alias in item.get("aliases", [])),
+                    }
+                ),
+                None,
+            )
+            if species
+            else None
+        )
+        if selected_plant is None and species:
+            custom_id = "custom_" + hashlib.sha256(
+                species.casefold().encode("utf-8")
+            ).hexdigest()[:16]
+            selected_plant = store.ensure_custom_plant(custom_id, species)
+    if selected_plant is None:
+        connection.send_error(msg["id"], "plant_required", "Select or enter a plant species")
+        return
+    identity.update(
+        {
+            "plant_profile_id": selected_plant["id"],
+            "plant_species": selected_plant["name"],
+            "botanical_name": selected_plant.get("botanical_name", ""),
+        }
+    )
     try:
+        plan = plant_plan(selected_plant)
         cultivation = new_cultivation(
             name=msg.get("name", ""),
             start_date=start_date,
-            identity=msg.get("identity", {}),
+            identity=identity,
             plan=plan,
             system_snapshot=normalize_system_profile(
                 store.data.get("system_profile")
             ),
+            plant_profile_snapshot=selected_plant,
             cultivation_id=msg.get("cultivation_id"),
         )
         if not cultivation["identity"]["plant_species"]:
@@ -851,6 +928,7 @@ def async_register(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_save_entities)
     websocket_api.async_register_command(hass, websocket_save_profile)
     websocket_api.async_register_command(hass, websocket_save_system_profile)
+    websocket_api.async_register_command(hass, websocket_save_plant)
     websocket_api.async_register_command(hass, websocket_save_assistant_settings)
     websocket_api.async_register_command(hass, websocket_generate_assistant_report)
     websocket_api.async_register_command(hass, websocket_select_stage)

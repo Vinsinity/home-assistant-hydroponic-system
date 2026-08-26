@@ -234,6 +234,8 @@ def assistant_context_summary(
     missing = []
     if not cultivation or not cultivation.get("active"):
         missing.append("Aktif yetiştirme")
+    elif not cultivation.get("plant_profile_snapshot"):
+        missing.append("Bitki türü profili")
     if not system_status["complete"]:
         missing.append("Kabin / sistem / ışık bilgileri")
     if not sensors:
@@ -241,7 +243,12 @@ def assistant_context_summary(
     if not recent_events:
         missing.append("Günlük kaydı")
     return {
-        "ready": bool(cultivation and cultivation.get("active") and system_status["complete"]),
+        "ready": bool(
+            cultivation
+            and cultivation.get("active")
+            and cultivation.get("plant_profile_snapshot")
+            and system_status["complete"]
+        ),
         "missing": missing,
         "sensor_metric_count": len(sensors),
         "recent_event_count": len(recent_events),
@@ -278,6 +285,11 @@ def build_assistant_prompt(
             "start_date": _text(cultivation.get("start_date"), 10),
             "active_stage": active_stage,
             "stage_profile": active_profile or {},
+            "plant_profile": (
+                cultivation.get("plant_profile_snapshot", {})
+                if isinstance(cultivation.get("plant_profile_snapshot"), dict)
+                else {}
+            ),
         },
         "system": normalize_system_profile(
             cultivation.get("system_snapshot") or system_profile

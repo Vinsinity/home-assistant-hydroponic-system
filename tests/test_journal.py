@@ -40,6 +40,10 @@ def _record(record_id: str, start_date: str):
             "cabin": {"name": "Cabinet A"},
             "lighting": {"model": "Fixture 1"},
         },
+        plant_profile_snapshot={
+            "id": "tomato",
+            "profile": {"kind": "editable_example"},
+        },
         cultivation_id=record_id,
         timestamp=f"{start_date}T08:00:00+00:00",
     )
@@ -80,6 +84,27 @@ def test_cultivation_keeps_its_system_snapshot_in_record_and_start_event():
     assert record["system_snapshot"]["cabin"]["name"] == "Cabinet A"
     started = next(event for event in data["events"] if event["type"] == "cultivation_started")
     assert started["data"]["system_snapshot"] == record["system_snapshot"]
+    assert record["plant_profile_snapshot"]["id"] == "tomato"
+    assert started["data"]["plant_profile_snapshot"] == record["plant_profile_snapshot"]
+
+
+def test_first_enabled_plant_stage_becomes_initial_stage():
+    data = _data()
+    record = journal.new_cultivation(
+        name="Transplant grow",
+        start_date="2026-08-01",
+        identity={"plant_species": "Lettuce"},
+        plan=[{"stage": "early_veg", "planned_days": 7}, {"stage": "veg", "planned_days": 21}],
+        cultivation_id="transplant",
+        timestamp="2026-08-01T08:00:00+00:00",
+    )
+
+    journal.start_cultivation(data, record)
+
+    assert data["active_stage"] == "early_veg"
+    assert record["transitions"][0]["stage"] == "early_veg"
+    transition = next(event for event in data["events"] if event["type"] == "stage_transition")
+    assert transition["data"]["stage"] == "early_veg"
 
 
 def test_events_are_append_only_and_duplicate_ids_are_rejected():

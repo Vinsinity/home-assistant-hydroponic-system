@@ -68,6 +68,10 @@ def test_assistant_prompt_marks_user_data_and_forbids_actions():
             "name": "Grow 1",
             "start_date": "2026-08-26",
             "identity": {"plant_species": "Tomato"},
+            "plant_profile_snapshot": {
+                "id": "tomato",
+                "profile": {"kind": "editable_example"},
+            },
             "system_snapshot": {},
         },
         active_stage="germination",
@@ -86,6 +90,7 @@ def test_assistant_prompt_marks_user_data_and_forbids_actions():
     assert "hiçbir cihazı kontrol etme" in prompt
     assert "GROW_DATA_BEGIN" in prompt
     assert "Roots visible" in prompt
+    assert '"id": "tomato"' in prompt
 
 
 def test_context_summary_reports_missing_data_plainly():

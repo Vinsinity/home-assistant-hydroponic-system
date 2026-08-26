@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.28.0
+
+- Add a versioned, persistent Plant Library with Tomato, Lettuce, Cannabis, Basil, Strawberry, Pepper, and Cucumber.
+- Add editable per-species stage targets for schedule, photoperiod, light, environment, pH, EC, water temperature, and dissolved oxygen.
+- Mark every built-in profile as an editable starting example and retain its reference URLs in storage.
+- Add custom plant creation; starting an unlisted species automatically creates a reusable custom library record.
+- Replace free-text-only plant selection with a library picker and cultivar suggestions in the grow wizard.
+- Build each new cultivation calendar from the selected species profile and omit disabled stages.
+- Snapshot the full selected plant profile into the cultivation and immutable start event.
+- Feed the snapshotted plant and active-stage profile to the read-only Grow Assistant.
+- Include the Plant Library in checksummed JSON exports and the Setup hub.
+- Migrate the append-only journal to schema 3 without replacing existing cultivations or events.
+
 ## 0.27.0
 
 - Add a reusable, validated cabin, water-system, and lighting profile.
