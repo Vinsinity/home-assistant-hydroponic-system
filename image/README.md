@@ -7,14 +7,14 @@ Assistant and Docker are not required on the target device.
 
 ## Included
 
-- native GrowAsist web/API service on port 8080;
+- native GrowAsist web/API service on standard HTTP port 80;
 - SQLite WAL data under `/var/lib/growasist`;
 - a unique 256-bit API token generated on first boot;
 - SSH public-key-only access for `growasist-admin`;
 - I2C bus 1 enabled and bounded `/dev/i2c-1` service access;
 - daily consistent database backups retained for 30 days;
 - root filesystem expansion on first boot;
-- mDNS discovery at `http://growasist.local:8080`.
+- mDNS discovery at `http://growasist.local`.
 
 The current appliance preset uses the `Europe/Istanbul` timezone and Turkey
 Wi-Fi regulatory domain. Public release builds will expose these as build or
@@ -65,7 +65,7 @@ sudo growasistctl token
 sudo growasistctl check
 ```
 
-Open `http://growasist.local:8080` and enter the printed token. Useful commands
+Open `http://growasist.local` and enter the printed token. Useful commands
 are `sudo growasistctl status`, `backup`, `logs`, `restart`, and
 `import-ha /path/to/journal.json`.
 

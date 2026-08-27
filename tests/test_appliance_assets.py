@@ -31,6 +31,25 @@ def test_appliance_runs_only_the_current_release() -> None:
     assert "PYTHONPATH=/opt/growasist/current" in control
 
 
+def test_appliance_uses_standard_http_without_running_as_root() -> None:
+    service = _text("image/assets/growasist.service")
+    discovery = _text("image/assets/growasist-avahi.service")
+    manager = _text("image/assets/growasist-release-manager")
+    assert "User=growasist" in service
+    assert "--port 80" in service
+    assert "AmbientCapabilities=CAP_NET_BIND_SERVICE" in service
+    assert "CapabilityBoundingSet=CAP_NET_BIND_SERVICE" in service
+    assert "<port>80</port>" in discovery
+    assert "health_url=http://127.0.0.1/api/v1/health" in manager
+
+
+def test_appliance_starts_after_first_boot_is_already_complete() -> None:
+    service = _text("image/assets/growasist.service")
+    assert "Wants=growasist-firstboot.service" in service
+    assert "Requires=growasist-firstboot.service" not in service
+    assert "network-online.target" not in service
+
+
 def test_release_activation_is_backup_and_preflight_gated() -> None:
     manager = _text("image/assets/growasist-release-manager")
     backup = manager.index("backup_path=$(/usr/local/libexec/growasist-backup)")
@@ -39,6 +58,11 @@ def test_release_activation_is_backup_and_preflight_gated() -> None:
     assert backup < preflight < activate
     assert 'echo "Health check failed; restoring previous release"' in manager
     assert 'atomic_link "$old_release" "$current_link"' in manager
+
+
+def test_development_release_root_is_traversable_by_service_user() -> None:
+    deploy = _text("scripts/deploy-dev.sh")
+    assert "sudo chmod 0755 '$remote_release'" in deploy
 
 
 def test_image_contains_release_and_sync_dependencies() -> None:

@@ -23,6 +23,9 @@
 - Separate application releases from the base image with atomic activation,
   live-journal-copy preflight checks, health-gated rollback, and a one-command
   Mac-to-Raspberry Pi development deployment flow.
+- Serve the Raspberry Pi appliance on standard HTTP port 80 without running as
+  root, start reliably after first-boot setup has already completed, and keep
+  development release directories traversable by the unprivileged service user.
 - Keep the automatic control engine disabled while standalone device adapters
   and deterministic safety rules are built.
 

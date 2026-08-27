@@ -67,7 +67,7 @@ RSYNC_RSH="$rsync_shell" rsync \
   "$remote:$remote_staging/"
 
 ssh "${ssh_args[@]}" "$remote" \
-  "sudo install -d -m 0755 '$remote_release' && sudo rsync -a --delete '$remote_staging/' '$remote_release/' && find '$remote_staging' -mindepth 1 -delete && rmdir '$remote_staging' && sudo growasistctl deploy-release '$remote_release'"
+  "sudo install -d -m 0755 '$remote_release' && sudo rsync -a --delete '$remote_staging/' '$remote_release/' && sudo chmod 0755 '$remote_release' && find '$remote_staging' -mindepth 1 -delete && rmdir '$remote_staging' && sudo growasistctl deploy-release '$remote_release'"
 
 echo "Deployed $release_id to $remote"
 echo "Rollback: ssh -p $ssh_port $remote 'sudo growasistctl rollback'"

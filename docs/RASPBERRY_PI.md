@@ -56,9 +56,9 @@ sudo growasistctl token
 sudo growasistctl check
 ```
 
-Open `http://growasist.local:8080` and enter the printed panel token. If mDNS is
+Open `http://growasist.local` and enter the printed panel token. If mDNS is
 not resolved by the client, use the Raspberry Pi address from the router, for
-example `http://10.1.1.x:8080`.
+example `http://10.1.1.x`.
 
 To move from Ethernet to Wi-Fi:
 

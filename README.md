@@ -33,8 +33,9 @@ See [the standalone architecture](docs/STANDALONE_ARCHITECTURE.md) and
 [Raspberry Pi development guide](docs/RASPBERRY_PI.md). Automatic equipment
 control remains disabled in this slice.
 
-Open `http://<raspberry-pi-ip>:8080`, enter the token from `.env`, and use the
-panel directly. Home Assistant is not required by this runtime. Automatic
+On the Raspberry Pi appliance, open `http://<raspberry-pi-ip>` and enter the
+first-boot token. Container development remains on port `8080`. Home Assistant
+is not required by this runtime. Automatic
 equipment control and LAN discovery are deliberately still disabled until the
 native device adapters and deterministic safety layer are implemented.
 
