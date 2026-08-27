@@ -1,0 +1,49 @@
+#!/bin/sh
+set -eu
+
+run_core() {
+    runuser -u growasist -- env PYTHONPATH=/opt/growasist \
+        /usr/bin/python3 -m growasist --data-dir /var/lib/growasist "$@"
+}
+
+command=${1:-help}
+case "$command" in
+    status)
+        systemctl --no-pager --full status growasist.service
+        ;;
+    token)
+        . /etc/growasist/growasist.env
+        printf '%s\n' "$GROWASIST_API_TOKEN"
+        ;;
+    check)
+        run_core check
+        ;;
+    backup)
+        /usr/local/libexec/growasist-backup
+        ;;
+    import-ha)
+        export_file=${2:-}
+        if [ -z "$export_file" ] || [ ! -f "$export_file" ]; then
+            echo "Usage: sudo growasistctl import-ha /path/to/journal.json" >&2
+            exit 2
+        fi
+        import_file=/var/lib/growasist/.ha-journal-import.json
+        install -m 0600 -o growasist -g growasist "$export_file" "$import_file"
+        systemctl stop growasist.service
+        trap 'rm -f /var/lib/growasist/.ha-journal-import.json; systemctl start growasist.service' EXIT INT TERM
+        run_core import-ha "$import_file"
+        rm -f "$import_file"
+        systemctl start growasist.service
+        trap - EXIT INT TERM
+        ;;
+    restart)
+        systemctl restart growasist.service
+        ;;
+    logs)
+        journalctl -u growasist.service --no-pager -n 200
+        ;;
+    *)
+        echo "Usage: sudo growasistctl {status|token|check|backup|import-ha FILE|restart|logs}" >&2
+        exit 2
+        ;;
+esac

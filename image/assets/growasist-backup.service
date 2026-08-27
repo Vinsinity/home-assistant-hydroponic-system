@@ -1,0 +1,17 @@
+[Unit]
+Description=Create a consistent GrowAsist journal backup
+After=growasist.service
+
+[Service]
+Type=oneshot
+User=growasist
+Group=growasist
+Environment=PYTHONPATH=/opt/growasist
+ExecStart=/usr/local/libexec/growasist-backup
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/growasist /var/backups/growasist

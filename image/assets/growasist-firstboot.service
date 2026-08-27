@@ -1,0 +1,13 @@
+[Unit]
+Description=GrowAsist secure first-boot setup
+After=local-fs.target
+Before=growasist.service
+ConditionPathExists=!/var/lib/growasist/.initialized
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/growasist-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

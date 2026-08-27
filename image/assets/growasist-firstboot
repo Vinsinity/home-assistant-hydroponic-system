@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+config_dir=/etc/growasist
+environment_file="$config_dir/growasist.env"
+data_dir=/var/lib/growasist
+
+install -d -m 0700 "$config_dir"
+install -d -m 0750 -o growasist -g growasist "$data_dir"
+
+if [ ! -s "$environment_file" ]; then
+    token=$(/usr/bin/python3 -c 'import secrets; print(secrets.token_hex(32))')
+    umask 077
+    printf 'GROWASIST_API_TOKEN=%s\n' "$token" > "$environment_file"
+fi
+
+root_device=$(findmnt -n -o SOURCE /)
+parent_name=$(lsblk -n -o PKNAME "$root_device" | head -n 1)
+partition_number=$(lsblk -n -o PARTN "$root_device" | head -n 1)
+if [ -n "$parent_name" ] && [ -n "$partition_number" ]; then
+    growpart "/dev/$parent_name" "$partition_number" || true
+    resize2fs "$root_device" || true
+fi
+
+touch "$data_dir/.initialized"
+chown growasist:growasist "$data_dir/.initialized"

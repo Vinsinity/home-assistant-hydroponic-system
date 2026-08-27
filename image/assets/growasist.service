@@ -1,0 +1,36 @@
+[Unit]
+Description=GrowAsist local cultivation service
+Requires=growasist-firstboot.service
+After=growasist-firstboot.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=growasist
+Group=growasist
+SupplementaryGroups=i2c
+WorkingDirectory=/opt/growasist
+Environment=PYTHONPATH=/opt/growasist
+EnvironmentFile=/etc/growasist/growasist.env
+ExecStart=/usr/bin/python3 -m growasist --data-dir /var/lib/growasist serve --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/growasist
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+DevicePolicy=closed
+DeviceAllow=/dev/i2c-1 rw
+
+[Install]
+WantedBy=multi-user.target

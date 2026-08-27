@@ -1,60 +1,117 @@
-# Raspberry Pi standalone development
+# Raspberry Pi 5 standalone installation
 
-## First boot target
+GrowAsist now has a flashable appliance image. The target Raspberry Pi does
+not need Home Assistant, Docker, Python package installation, or a repository
+checkout. The image contains Raspberry Pi OS Lite 64-bit / Debian 13 Trixie,
+GrowAsist, its systemd services, I2C configuration, and backup timer.
 
-Use 64-bit Raspberry Pi OS Bookworm on Raspberry Pi 5. Keep the current HAOS
-microSD card untouched until the standalone journal has been imported, backed
-up, and verified on a separate storage device.
+## Safe HAOS cutover
 
-Install Docker Engine and the Compose plugin, clone the repository, then create
-the local environment file:
+Do not format the HAOS boot medium first. A safe cutover uses a second USB SSD,
+NVMe drive, or high-endurance microSD card:
 
-```sh
-cp .env.example .env
-openssl rand -hex 32
-```
+1. Start the old HAOS installation one last time.
+2. Download a full Home Assistant backup to another computer.
+3. Download the checksummed GrowAsist journal JSON from the existing panel.
+4. Confirm both files are non-empty and keep a second copy off the Raspberry Pi.
+5. Shut the Raspberry Pi down and physically remove or disconnect the HAOS
+   medium. Label it with the date; it is the rollback copy.
+6. Flash and test GrowAsist on the second medium.
+7. Keep the HAOS medium unchanged until the imported cultivation data, network,
+   sensors, and off-device backup have all been verified.
 
-Put the generated value in `.env`, then start GrowAsist:
+If HAOS is unreachable, stop here and keep its medium intact. An unavailable
+source cannot be considered backed up.
 
-```sh
-mkdir -p growasist-data
-sudo chown 10001:10001 growasist-data
-docker compose up --build -d
-docker compose ps
-curl http://127.0.0.1:8080/api/v1/health
-```
+## Build the image
 
-The standalone panel is available at `http://<raspberry-pi-ip>:8080`. Enter the
-same token in the sign-in screen; it remains only in that browser tab's session
-storage. API endpoints containing cultivation data require `Authorization:
-Bearer <token>`.
-
-The panel can start and finish cultivations, append journal events, change the
-active stage, and save grow-area/media/light context. It does not send commands
-to lights, pumps, humidifiers, or dosing hardware.
-
-The persistent database is stored in `./growasist-data`. Back it up to another
-disk or host; merely recreating the container must not remove this directory.
-
-## Importing the existing journal
-
-Download a checksummed JSON journal from the current Hydroponic System panel.
-Copy it to the Raspberry Pi and stop write activity during the one-time cutover.
-Run:
+On Apple Silicon macOS or ARM64 Linux with Docker:
 
 ```sh
-docker compose exec growasist growasist import-ha /data/hydroponic-journal.json
-docker compose exec growasist growasist check
-docker compose exec growasist growasist backup /data/backups/after-import.db
+GROWASIST_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/id_ed25519.pub" \
+./image/build-image-docker.sh
 ```
 
-Import merges by cultivation and event ID. It never treats an absent event in
-the import as a deletion. An event ID whose content changed is rejected.
+For a native Raspberry Pi OS build, follow [`image/README.md`](../image/README.md).
+The output used for flashing is:
 
-## Hardware access
+```text
+dist/image/growasist-pi5.img.zst
+```
 
-The first standalone slice does not operate I²C or network actuators. Later the
-hardware-gateway service will receive explicit `/dev/i2c-1` access and the
-minimum Linux group permissions. It will not require privileged container mode.
-Network discovery requires the service and devices to share a reachable LAN;
-the base Compose service therefore uses host networking.
+## Flash and first boot
+
+1. Open Raspberry Pi Imager and choose **Use Custom**.
+2. Select `growasist-pi5.img.zst` and the new, disposable target medium.
+3. Double-check the target name and capacity before writing it.
+4. Put the new medium in the Raspberry Pi 5, connect Ethernet, and boot.
+5. Wait a few minutes for filesystem expansion and first-boot setup.
+
+The image already contains the SSH public key supplied at build time. Password
+login and SSH root login are disabled. Connect with the matching private key:
+
+```sh
+ssh growasist-admin@growasist.local
+sudo growasistctl token
+sudo growasistctl check
+```
+
+Open `http://growasist.local:8080` and enter the printed panel token. If mDNS is
+not resolved by the client, use the Raspberry Pi address from the router, for
+example `http://10.1.1.x:8080`.
+
+To move from Ethernet to Wi-Fi:
+
+```sh
+sudo iwctl station wlan0 scan
+sudo iwctl station wlan0 get-networks
+sudo iwctl station wlan0 connect "YOUR_SSID"
+```
+
+The current private appliance preset uses the `Europe/Istanbul` timezone and
+Turkey Wi-Fi regulatory domain.
+
+## Import the HA journal
+
+Copy the exported JSON to the new Raspberry Pi and import it only after the
+standalone integrity check succeeds:
+
+```sh
+scp hydroponic-journal.json growasist-admin@growasist.local:/tmp/
+ssh growasist-admin@growasist.local
+sudo growasistctl import-ha /tmp/hydroponic-journal.json
+sudo growasistctl check
+sudo growasistctl backup
+```
+
+Import merges by cultivation and event ID. It does not treat a missing imported
+event as a deletion, and conflicting immutable event content is rejected.
+
+## Journal durability
+
+The live database is `/var/lib/growasist/growasist.db`. It uses SQLite WAL with
+`synchronous=FULL`, immutable journal-event triggers, and append-only full-state
+revisions. A consistent backup runs every day around 03:15 and retains 30 days
+under `/var/backups/growasist`.
+
+Those daily files are on the same physical medium and therefore do not protect
+against media loss. Before starting a cultivation, copy backups automatically
+to a second physical disk or another host. A database can be called durable only
+after a restore from that second destination has been tested.
+
+Useful commands:
+
+```sh
+sudo growasistctl status
+sudo growasistctl check
+sudo growasistctl backup
+sudo growasistctl logs
+sudo growasistctl restart
+```
+
+## Current hardware boundary
+
+The image enables `/dev/i2c-1` and grants the GrowAsist service only that device.
+The standalone product still does not issue automatic commands to lights,
+pumps, humidifiers, CO2 valves, or dosing hardware. Shelly/Tapo/Tuya discovery,
+enrolment, and deterministic safety control remain subsequent delivery slices.

@@ -25,7 +25,9 @@ provides:
 - immutable full-state revisions for recovery;
 - checksummed Home Assistant journal import and compatible export;
 - a consistent online SQLite backup command;
-- a Raspberry Pi-compatible Docker image and Compose service.
+- a Raspberry Pi-compatible Docker image and Compose service;
+- a flashable Raspberry Pi 5 appliance image based on Raspberry Pi OS Lite
+  64-bit / Debian 13 Trixie, with a hardened systemd service and backup timer.
 
 The existing custom integration remains operational while the standalone UI
 and device adapters are built. Both use journal schema 6, so migration does not

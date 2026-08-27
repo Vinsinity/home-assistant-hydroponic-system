@@ -1,0 +1,35 @@
+include:
+  file: trixie-minbase.yaml
+
+artefact:
+  version: development
+
+device:
+  hostname: growasist
+  storage_type: sd
+  user1: growasist-admin
+  user1sudo: nopasswd
+
+ssh:
+  pubkey_only: y
+
+locale:
+  timezone: Europe/Istanbul
+
+ieee80211:
+  regdom: TR
+
+image:
+  name: growasist-pi5
+  boot_part_size: 512M
+  root_part_size: 2500M
+
+deploy:
+  compression: zstd
+  dir: ${@SRCROOT}/../dist/image
+
+growasist:
+  source_root: ${@SRCROOT}/..
+
+layer:
+  app: growasist-core

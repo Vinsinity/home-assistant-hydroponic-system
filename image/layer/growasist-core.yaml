@@ -1,0 +1,79 @@
+# METABEGIN
+# X-Env-Layer-Name: growasist-core
+# X-Env-Layer-Category: application
+# X-Env-Layer-Desc: Native GrowAsist service, durable journal, I2C access and first-boot setup.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: systemd-min,rpi-user-credentials,openssh-server
+#
+# X-Env-VarPrefix: growasist
+#
+# X-Env-VarRequires: IGconf_growasist_source_root
+# X-Env-VarRequires-Valid: string
+#
+# X-Env-Var-source_root:
+# X-Env-Var-source_root-Desc: GrowAsist repository root copied into the image.
+# X-Env-Var-source_root-Required: y
+# X-Env-Var-source_root-Valid: string
+# X-Env-Var-source_root-Set: y
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - avahi-daemon
+    - ca-certificates
+    - cloud-guest-utils
+    - curl
+    - e2fsprogs
+    - i2c-tools
+    - python3
+    - sqlite3
+  customize-hooks:
+    - |-
+      set -eu
+      source_root="$IGconf_growasist_source_root"
+      test -f "$source_root/pyproject.toml"
+      test -f "$source_root/growasist/__main__.py"
+      install -d -m 0755 "$1/opt/growasist"
+      tar -C "$source_root" \
+        --exclude='__pycache__' --exclude='*.pyc' --exclude='*.pyo' \
+        -cf - growasist custom_components | tar -C "$1/opt/growasist" -xf -
+      install -m 0644 "$source_root/pyproject.toml" "$1/opt/growasist/"
+      install -m 0644 "$source_root/README.md" "$1/opt/growasist/"
+      install -m 0644 "$source_root/LICENSE" "$1/opt/growasist/"
+      chown -R root:root "$1/opt/growasist"
+    - |-
+      set -eu
+      assets="$IGconf_growasist_source_root/image/assets"
+      install -d -m 0755 "$1/usr/local/libexec"
+      install -d -m 0755 "$1/usr/local/bin"
+      install -m 0755 "$assets/growasist-firstboot" "$1/usr/local/libexec/"
+      install -m 0755 "$assets/growasist-backup" "$1/usr/local/libexec/"
+      install -m 0755 "$assets/growasistctl" "$1/usr/local/bin/"
+      install -m 0644 "$assets/growasist-firstboot.service" "$1/etc/systemd/system/"
+      install -m 0644 "$assets/growasist.service" "$1/etc/systemd/system/"
+      install -m 0644 "$assets/growasist-backup.service" "$1/etc/systemd/system/"
+      install -m 0644 "$assets/growasist-backup.timer" "$1/etc/systemd/system/"
+      install -d -m 0755 "$1/etc/avahi/services"
+      install -m 0644 "$assets/growasist-avahi.service" "$1/etc/avahi/services/"
+    - |-
+      set -eu
+      if ! chroot "$1" getent group i2c >/dev/null 2>&1; then
+        chroot "$1" groupadd --system i2c
+      fi
+      if ! chroot "$1" id growasist >/dev/null 2>&1; then
+        chroot "$1" useradd --system --home-dir /var/lib/growasist \
+          --create-home --shell /usr/sbin/nologin --groups i2c growasist
+      fi
+      chroot "$1" install -d -m 0750 -o growasist -g growasist /var/lib/growasist
+      chroot "$1" install -d -m 0750 -o growasist -g growasist /var/backups/growasist
+      install -d -m 0700 "$1/etc/growasist"
+      chroot "$1" python3 -m compileall -q /opt/growasist
+    - |-
+      set -eu
+      config="$1/boot/firmware/config.txt"
+      grep -qxF 'dtparam=i2c_arm=on' "$config" || printf '\ndtparam=i2c_arm=on\n' >> "$config"
+      grep -qxF 'dtparam=i2c1=on' "$config" || printf 'dtparam=i2c1=on\n' >> "$config"
+    - $BDEBSTRAP_HOOKS/enable-units "$1" growasist-firstboot
+    - $BDEBSTRAP_HOOKS/enable-units "$1" growasist
+    - $BDEBSTRAP_HOOKS/enable-units "$1" growasist-backup.timer
+    - $BDEBSTRAP_HOOKS/enable-units "$1" avahi-daemon

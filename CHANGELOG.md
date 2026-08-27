@@ -17,6 +17,9 @@
   growing medium, fixture context, and nutrient-program name at grow start.
 - Validate the complete browser flow on desktop and mobile while keeping all
   automatic equipment control disabled.
+- Add a reproducible Raspberry Pi 5 appliance image based on Raspberry Pi OS
+  Lite 64-bit / Debian 13 Trixie, with systemd startup, SSH key-only access,
+  I2C bus access, first-boot token generation, mDNS, and daily SQLite backups.
 - Keep the automatic control engine disabled while standalone device adapters
   and deterministic safety rules are built.
 

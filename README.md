@@ -24,6 +24,8 @@ The repository now includes a usable Home Assistant-independent product slice:
 - `growasist check` verifies storage integrity and `growasist backup` creates a
   consistent database backup;
 - `Dockerfile` and `compose.yaml` provide the initial Raspberry Pi OS runtime.
+- `image/` builds a complete flashable Raspberry Pi 5 appliance image; the
+  target Pi does not require Home Assistant, Docker, or a manual Python setup.
 
 See [the standalone architecture](docs/STANDALONE_ARCHITECTURE.md) and
 [Raspberry Pi development guide](docs/RASPBERRY_PI.md). Automatic equipment
