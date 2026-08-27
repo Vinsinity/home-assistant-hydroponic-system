@@ -147,5 +147,8 @@ sudo growasistctl restart
 
 The image enables `/dev/i2c-1` and grants the GrowAsist service only that device.
 The standalone product still does not issue automatic commands to lights,
-pumps, humidifiers, CO2 valves, or dosing hardware. Shelly/Tapo/Tuya discovery,
-enrolment, and deterministic safety control remain subsequent delivery slices.
+pumps, humidifiers, CO2 valves, or dosing hardware. Setup → Hardware provides a
+read-only LAN scan for Shelly, TP-Link/Tapo, Tuya candidates, and SSDP devices.
+Candidates enter the registry only after explicit user enrolment. Device
+authentication, telemetry adapters, and deterministic safety control remain
+subsequent delivery slices.

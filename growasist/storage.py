@@ -71,7 +71,13 @@ def default_state() -> dict[str, Any]:
                 {"id": "ph_down", "name": "pH−", "required": True},
             ],
         },
-        "device_registry": {"schema_version": 1, "devices": {}, "assignments": {}},
+        "device_registry": {
+            "schema_version": 2,
+            "devices": {},
+            "candidates": {},
+            "assignments": {},
+            "last_scan": None,
+        },
     }
 
 

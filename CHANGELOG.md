@@ -13,6 +13,9 @@
 - Restore Plant Library, editable stage profiles, nutrient catalog, native I²C
   hardware, and dosing/calibration as real nested Setup workspaces in the
   standalone panel; all remain configuration-only while control is disabled.
+- Add bounded, read-only LAN discovery for Shelly mDNS/RPC, TP-Link/Tapo UDP,
+  Tuya candidates, and SSDP; require an explicit name and grow-system role
+  before moving any candidate into the persistent device registry.
 - Include profiles, hardware, dosing fluids, safety policy, and Assistant
   settings in checksummed exports so moving away from Home Assistant does not
   hide or discard the system configuration.

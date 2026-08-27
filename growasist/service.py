@@ -26,6 +26,7 @@ from custom_components.hydroponic_system.journal import (
     normalize_user_event_values,
     select_stage,
     start_cultivation,
+    utc_now,
 )
 from custom_components.hydroponic_system.plant_catalog import (
     cultivation_plant_snapshot,
@@ -35,6 +36,7 @@ from custom_components.hydroponic_system.plant_catalog import (
 )
 
 from . import __version__
+from .discovery import NetworkDiscovery
 from .storage import GrowAsistStore
 
 
@@ -610,3 +612,82 @@ class GrowAsistService:
             state["engine_enabled"] = False
             saved = self.store.save_state(state)
             return deepcopy(saved["hardware"])
+
+    def discover_network(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Discover read-only LAN candidates and persist the scan inventory."""
+        timeout = _bounded_number(payload.get("timeout"), 3, 1, 8)
+        result = NetworkDiscovery(timeout=float(timeout)).scan()
+        with self._mutation_lock:
+            state = self.store.load_state()
+            registry = state.setdefault("device_registry", {})
+            registry["schema_version"] = 2
+            devices = registry.setdefault("devices", {})
+            candidates = registry.setdefault("candidates", {})
+            seen_ids = set()
+            for candidate in result["candidates"]:
+                candidate_id = str(candidate["id"])
+                seen_ids.add(candidate_id)
+                if candidate_id in devices:
+                    enrolled = devices[candidate_id]
+                    for key in (
+                        "host", "port", "ports", "mac", "model", "firmware",
+                        "generation", "capabilities", "supported", "requires_auth",
+                        "source", "last_seen",
+                    ):
+                        if key in candidate:
+                            enrolled[key] = deepcopy(candidate[key])
+                    enrolled["online"] = True
+                    continue
+                candidates[candidate_id] = {**deepcopy(candidate), "online": True}
+            for candidate_id, candidate in candidates.items():
+                if candidate_id not in seen_ids:
+                    candidate["online"] = False
+            for device_id, device in devices.items():
+                if device_id not in seen_ids:
+                    device["online"] = False
+            registry["last_scan"] = {
+                key: deepcopy(result[key])
+                for key in (
+                    "started_at", "finished_at", "network", "local_ip",
+                    "candidate_count", "warnings",
+                )
+            }
+            saved = self.store.save_state(state)
+            saved_registry = saved["device_registry"]
+            return {
+                "last_scan": deepcopy(saved_registry["last_scan"]),
+                "candidates": deepcopy(saved_registry.get("candidates", {})),
+                "devices": deepcopy(saved_registry.get("devices", {})),
+            }
+
+    def enroll_network_device(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Move one discovered candidate into the approved device inventory."""
+        allowed_roles = {
+            "unassigned", "environment_sensor", "co2_sensor", "light_dimmer",
+            "light_power", "outlet_bank", "humidifier",
+        }
+        with self._mutation_lock:
+            state = self.store.load_state()
+            registry = state.setdefault("device_registry", {})
+            candidates = registry.setdefault("candidates", {})
+            devices = registry.setdefault("devices", {})
+            candidate_id = str(payload.get("candidate_id") or "")
+            candidate = candidates.get(candidate_id) or devices.get(candidate_id)
+            if not isinstance(candidate, dict):
+                raise ValueError("Seçilen ağ cihazı adayı bulunamadı")
+            role = str(payload.get("role") or candidate.get("suggested_role") or "unassigned")
+            if role not in allowed_roles:
+                raise ValueError("Bu cihaz rolü desteklenmiyor")
+            device = deepcopy(candidate)
+            device.update({
+                "name": _text(payload.get("name"), 96, str(candidate.get("name") or "Ağ cihazı")),
+                "role": role,
+                "status": "enrolled",
+                "enrolled_at": str(candidate.get("enrolled_at") or utc_now()),
+            })
+            devices[candidate_id] = device
+            candidates.pop(candidate_id, None)
+            registry["schema_version"] = 2
+            registry.setdefault("assignments", {})[candidate_id] = {"role": role}
+            saved = self.store.save_state(state)
+            return deepcopy(saved["device_registry"]["devices"][candidate_id])

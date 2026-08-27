@@ -39,9 +39,11 @@ control remains disabled in this slice.
 
 On the Raspberry Pi appliance, open `http://<raspberry-pi-ip>` and enter the
 first-boot token. Container development remains on port `8080`. Home Assistant
-is not required by this runtime. Automatic
-equipment control and LAN discovery are deliberately still disabled until the
-native device adapters and deterministic safety layer are implemented.
+is not required by this runtime. Setup → Hardware now performs read-only
+Shelly, TP-Link/Tapo, Tuya-candidate, and SSDP discovery and requires explicit
+user enrolment into the device registry. Authentication, monitoring, and
+equipment control remain disabled until each native adapter and the
+deterministic safety layer are implemented.
 
 ## Existing Home Assistant adapter (0.32.0)
 

@@ -467,13 +467,62 @@ const driverLabels = { atlas_do: "Atlas EZO DO", atlas_ph: "Atlas EZO pH", atlas
 function renderHardware(panel) {
   const hardware = state.hardware || {};
   const assignments = hardware.device_assignments || [];
-  const discovered = Object.values(state.device_registry?.devices || {});
+  const networkDevices = Object.values(state.device_registry?.devices || {});
+  const candidates = Object.values(state.device_registry?.candidates || {}).sort((left, right) => Number(right.online) - Number(left.online) || Number(right.supported) - Number(left.supported) || String(left.vendor).localeCompare(String(right.vendor)) || String(left.host).localeCompare(String(right.host), undefined, { numeric: true }));
+  const knownCandidates = candidates.filter((item) => item.vendor !== "Unknown");
+  const otherCandidates = candidates.filter((item) => item.vendor === "Unknown");
+  const lastScan = state.device_registry?.last_scan;
   panel.innerHTML = `<form class="hardware-head" data-hardware-base><div><span class="kicker">I²C BAĞLANTISI</span><h3>/dev/i2c-${html(hardware.i2c_bus ?? 1)}</h3><p>Bu bölüm fiziksel cihaz tanımıdır; besin sıvısı eşlemesi değildir.</p></div><label><span>I²C bus</span><input name="i2c_bus" type="number" min="0" max="255" value="${html(hardware.i2c_bus ?? 1)}"></label><label><span>Okuma aralığı · sn</span><input name="poll_interval" type="number" min="10" max="300" value="${html(hardware.poll_interval ?? 30)}"></label><button class="secondary-button" type="submit">Bağlantıyı kaydet</button></form>
     <section class="hardware-section"><header class="section-head"><div><h3>Tanımlı I²C cihazları</h3><small>${assignments.length} atama</small></div><button class="primary-button compact" type="button" data-add-hardware>Cihaz ekle</button></header><div class="record-ledger">${assignments.length ? assignments.map((item) => `<button type="button" class="record-row hardware-row" data-hardware-address="${item.address}"><span class="record-code">0x${Number(item.address).toString(16).toUpperCase().padStart(2,"0")}</span><span><b>${html(item.name)}</b><small>${html(driverLabels[item.driver] || item.driver)}</small></span><span>${item.channels ? `${item.channels.length} motor kanalı` : "Sensör"}</span><em>Düzenle</em></button>`).join("") : '<p class="empty-list">I²C cihazı tanımlanmadı.</p>'}</div></section>
-    <section class="hardware-section"><header class="section-head"><div><h3>Ağ cihazları</h3><small>Shelly · Tuya · Tapo · MQTT</small></div></header><div class="device-empty"><span><b>${discovered.length ? `${discovered.length} cihaz kayıtlı` : "Henüz yerel ağ cihazı yok"}</b><small>Keşif sürücüleri geliştirilirken yanlış bir cihazı otomasyona bağlamıyoruz.</small></span><button class="secondary-button" type="button" disabled>Ağ taraması hazırlanıyor</button></div></section>`;
+    <section class="hardware-section network-discovery"><header class="section-head"><div><h3>Ağ cihazları</h3><small>Shelly ve Tapo kimlik keşfi · Tuya ve SSDP aday keşfi</small></div><button class="primary-button compact" type="button" data-network-scan>Ağı tara</button></header>
+      <div class="scan-summary"><span><b>${lastScan ? `${html(lastScan.network)} tarandı` : "Henüz ağ taraması yapılmadı"}</b><small>${lastScan ? `${html(lastScan.candidate_count)} cihaz görüldü · ${html(String(lastScan.finished_at || "").replace("T", " ").slice(0, 16))}` : "Tarama salt okunurdur; bulunan cihazlar kendiliğinden eklenmez."}</small></span>${lastScan?.warnings?.length ? `<em>${html(lastScan.warnings.join(" · "))}</em>` : ""}</div>
+      <div class="network-columns"><div><div class="subsection-label"><b>Tanınan cihazlar</b><small>${knownCandidates.length}</small></div><div class="record-ledger">${knownCandidates.length ? knownCandidates.map(networkCandidateRow).join("") : '<p class="empty-list">Shelly, Tapo veya Tuya adayı bulunamadı.</p>'}</div>${otherCandidates.length ? `<details class="other-devices"><summary>Diğer ağ cihazları <span>${otherCandidates.length}</span></summary><div class="record-ledger">${otherCandidates.map(networkCandidateRow).join("")}</div></details>` : ""}</div>
+      <div><div class="subsection-label"><b>Tanımlı cihazlar</b><small>${networkDevices.length}</small></div><div class="record-ledger">${networkDevices.length ? networkDevices.map(networkDeviceRow).join("") : '<p class="empty-list">Henüz onaylanmış ağ cihazı yok.</p>'}</div></div></div>
+    </section>`;
   panel.querySelector("[data-hardware-base]").addEventListener("submit", saveHardwareBase);
   panel.querySelector("[data-add-hardware]").addEventListener("click", () => openHardwareDialog());
   panel.querySelectorAll("[data-hardware-address]").forEach((button) => button.addEventListener("click", () => openHardwareDialog(assignments.find((item) => item.address === Number(button.dataset.hardwareAddress)))));
+  panel.querySelector("[data-network-scan]").addEventListener("click", scanNetwork);
+  panel.querySelectorAll("[data-network-candidate]").forEach((button) => button.addEventListener("click", () => openNetworkDeviceDialog(candidates.find((item) => item.id === button.dataset.networkCandidate))));
+  panel.querySelectorAll("[data-network-device]").forEach((button) => button.addEventListener("click", () => openNetworkDeviceDialog(networkDevices.find((item) => item.id === button.dataset.networkDevice))));
+}
+
+function networkCandidateRow(item) {
+  const support = !item.online ? "Son taramada görülmedi" : item.supported ? "Kimliği okundu" : item.vendor === "Unknown" ? "Türü belirlenemedi" : "Aday cihaz";
+  return `<button type="button" class="network-row ${item.online ? "" : "offline"}" data-network-candidate="${html(item.id)}"><span class="vendor-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || item.protocol)}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span class="support-state ${item.online && item.supported ? "supported" : "limited"}">${html(support)}</span><em>Tanımla</em></button>`;
+}
+
+function networkDeviceRow(item) {
+  const roles = { environment_sensor: "Ortam sensörü", co2_sensor: "CO₂ sensörü", light_dimmer: "Işık dimmeri", light_power: "Işık gücü", outlet_bank: "Priz grubu", humidifier: "Nemlendirici", unassigned: "Rol atanmadı" };
+  return `<button type="button" class="network-row enrolled" data-network-device="${html(item.id)}"><span class="vendor-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || item.protocol)}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span class="support-state ${item.online ? "supported" : "limited"}">${html(roles[item.role] || item.role || "Rol atanmadı")}</span><em>${item.online ? "Düzenle" : "Son taramada yok · Düzenle"}</em></button>`;
+}
+
+async function scanNetwork(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Ağ taranıyor…";
+  try {
+    const payload = await api("/api/v1/network/discover", { method: "POST", body: JSON.stringify({ timeout: 3 }) });
+    await loadState(); currentSetupView = "hardware";
+    const count = Number(payload.result?.last_scan?.candidate_count || 0);
+    showToast(`${count} ağ cihazı adayı bulundu.`);
+  } catch (error) {
+    button.disabled = false; button.textContent = "Ağı tara"; showToast(error.message, true);
+  }
+}
+
+function openNetworkDeviceDialog(item) {
+  if (!item) return;
+  const edit = item.status === "enrolled";
+  const roles = [["unassigned","Şimdilik rol verme"],["environment_sensor","Ortam sıcaklık / nem sensörü"],["co2_sensor","CO₂ sensörü"],["light_dimmer","Işık dimmeri"],["light_power","Işık aç / kapat"],["outlet_bank","Priz grubu"],["humidifier","Nemlendirici"]];
+  openDialog({
+    kicker: edit ? "TANIMLI AĞ CİHAZI" : "AĞ CİHAZI ADAYI", title: edit ? "Cihaz tanımını düzenle" : "Cihazı tanımla", submitLabel: edit ? "Tanımı kaydet" : "Cihaz listesine ekle",
+    body: `<div class="device-fingerprint"><span class="vendor-mark large-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><div><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || "Model bilinmiyor")} · ${html(item.host)}</small></div></div><p class="dialog-note">${edit ? "Adını ve sistemdeki görevini değiştirebilirsiniz." : "Bu işlem cihazı yalnız envantere ekler."} Açma, kapatma, dimmer veya otomasyon komutu göndermez.</p><div class="dialog-grid"><label class="full"><span>GrowAsist adı</span><input name="name" value="${html(item.name || item.model || item.host)}" required></label><label class="full"><span>Sistemdeki görevi</span><select name="role">${roles.map(([role,label]) => `<option value="${role}" ${(item.role || item.suggested_role || "unassigned") === role ? "selected" : ""}>${label}</option>`).join("")}</select></label></div><dl class="fingerprint-grid"><div><dt>Protokol</dt><dd>${html(item.protocol)}</dd></div><div><dt>MAC</dt><dd>${html(item.mac || "Bilinmiyor")}</dd></div><div><dt>Keşif sonucu</dt><dd>${html(item.supported ? "Yerel kimlik bilgisi okundu" : "Aday olarak bulundu")}</dd></div><div><dt>Kimlik doğrulama</dt><dd>${html(item.requires_auth ? "Sonraki bağlantı adımında gerekli" : "Bu cihaz bildirmedi")}</dd></div></dl>`,
+    onSubmit: async (data) => {
+      await api("/api/v1/network/enroll", { method: "POST", body: JSON.stringify({ candidate_id: item.id, name: data.get("name"), role: data.get("role") }) });
+      dialog.close(); await loadState(); currentSetupView = "hardware"; showToast(edit ? "Ağ cihazı tanımı güncellendi." : "Ağ cihazı tanımlı cihazlara eklendi.");
+    },
+  });
 }
 
 async function saveHardwareBase(event) {

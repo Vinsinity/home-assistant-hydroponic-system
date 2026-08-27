@@ -89,10 +89,11 @@ available for an explicit rollback.
 1. Standalone core, durable storage, HA export import, health API. **Complete.**
 2. Standalone web shell, authentication, setup flow, cultivation and journal UI.
    **Usable first slice complete.**
-3. Device registry plus native Shelly discovery and monitoring.
+3. Device registry plus read-only Shelly/Tapo identity discovery and explicit
+   candidate enrolment. **Discovery and enrolment complete; monitoring pending.**
 4. Atlas EZO/PCA9685 hardware gateway and sensor history.
-5. Tapo and qualified Tuya-local adapters; Home Assistant adapter for remaining
-   vendor integrations.
+5. Qualified Shelly, Tapo, and Tuya-local telemetry/control adapters; optional
+   Home Assistant adapter for remaining vendor integrations.
 6. Read-only Grow Assistant provider abstraction.
 7. Deterministic automation with interlocks, watchdogs, audit events, manual
    override, and fail-safe states.

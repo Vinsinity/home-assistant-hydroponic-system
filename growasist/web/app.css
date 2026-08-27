@@ -238,6 +238,39 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
 .hardware-section { padding: 27px 0; border-bottom: 1px solid var(--line); }
 .hardware-row { grid-template-columns: 58px minmax(180px,1fr) minmax(120px,.5fr) auto; }
 .hardware-row .record-code { width: 50px; border-radius: 7px; }
+.scan-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 5px 0 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: rgba(255,255,255,.012); }
+.scan-summary b, .scan-summary small { display: block; }
+.scan-summary b { font-size: 9px; }
+.scan-summary small { margin-top: 4px; color: var(--muted); font-size: 8px; }
+.scan-summary em { color: var(--bloom); font: normal 8px var(--data); }
+.other-devices { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.other-devices summary { color: var(--muted); cursor: pointer; font-size: 8px; list-style-position: inside; }
+.other-devices summary span { margin-left: 6px; color: var(--text); }
+.other-devices .record-ledger { margin-top: 10px; }
+.network-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.subsection-label { display: flex; align-items: center; justify-content: space-between; padding: 9px 2px; color: var(--muted); font-size: 9px; }
+.subsection-label small { display: grid; width: 22px; height: 22px; place-items: center; border: 1px solid var(--line); border-radius: 50%; font: 8px var(--data); }
+.network-row { display: grid; grid-template-columns: 38px minmax(0,1.25fr) minmax(100px,.75fr); align-items: center; gap: 11px; width: 100%; padding: 13px 6px; border: 0; border-bottom: 1px solid var(--line); color: var(--mist); background: none; cursor: pointer; text-align: left; }
+.network-row:hover { background: rgba(53,183,209,.035); }
+.network-row.offline { opacity: .55; }
+.network-row > span:nth-child(4), .network-row > em { grid-column: 2/-1; }
+.network-row b, .network-row small { display: block; }
+.network-row b { font-size: 9px; }
+.network-row small { margin-top: 4px; color: var(--muted); font-size: 8px; }
+.network-row em { color: var(--water); font: normal 8px var(--data); }
+.vendor-mark { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid #315057; border-radius: 50%; color: var(--water); font: 8px var(--data); }
+.support-state { width: max-content; padding: 4px 7px; border-radius: 20px; font-size: 8px; }
+.support-state.supported { color: var(--leaf); background: rgba(105,197,150,.08); }
+.support-state.limited { color: var(--bloom); background: rgba(228,170,78,.08); }
+.device-fingerprint { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
+.device-fingerprint b, .device-fingerprint small { display: block; }
+.device-fingerprint b { font-size: 12px; }
+.device-fingerprint small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.large-mark { width: 42px; height: 42px; }
+.fingerprint-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1px; margin: 18px 0 0; background: var(--line); }
+.fingerprint-grid div { padding: 11px; background: var(--canopy); }
+.fingerprint-grid dt { color: var(--muted); font: 8px var(--data); text-transform: uppercase; }
+.fingerprint-grid dd { margin: 5px 0 0; font-size: 9px; }
 .safety-banner { border-color: var(--leaf); background: rgba(105,197,150,.035); }
 .safety-banner b, .safety-banner small { display: block; }
 .safety-banner b { color: var(--leaf); font-size: 10px; }
@@ -304,6 +337,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
   .hardware-head { grid-template-columns: 1fr 120px 140px; }
   .hardware-head > div { grid-column: 1/-1; }
   .motor-channel { grid-template-columns: 1fr; }
+  .network-columns { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 680px) {
@@ -345,6 +379,10 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
   .hardware-head { grid-template-columns: 1fr 1fr; }
   .hardware-head > div, .hardware-head button { grid-column: 1/-1; }
   .hardware-row { grid-template-columns: 52px minmax(0,1fr) auto; }
+  .scan-summary { align-items: flex-start; flex-direction: column; }
+  .network-row { grid-template-columns: 36px minmax(0,1fr); }
+  .network-row > span:nth-child(3), .network-row > span:nth-child(4), .network-row > em { grid-column: 2; }
+  .fingerprint-grid { grid-template-columns: 1fr; }
   .page-actions { align-items: flex-start; flex-direction: column; }
   .event-row { grid-template-columns: 34px minmax(0,1fr); }
   .event-row time { grid-column: 2; }

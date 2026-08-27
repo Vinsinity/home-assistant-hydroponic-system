@@ -155,6 +155,8 @@ def build_handler(
                     "/api/v1/profiles": application.update_profile,
                     "/api/v1/plants": application.update_plant,
                     "/api/v1/hardware": application.update_hardware,
+                    "/api/v1/network/discover": application.discover_network,
+                    "/api/v1/network/enroll": application.enroll_network_device,
                 }
                 operation = routes.get(path)
                 if operation is None:
