@@ -42,6 +42,7 @@ const viewMeta = {
   journal: ["KALICI KAYIT", "Günlük"],
   setup: ["RASPBERRY PI", "Kurulum"],
 };
+const setupViewIds = new Set(["overview", "plants", "profiles", "nutrients", "hardware", "dosing"]);
 
 let token = sessionStorage.getItem(TOKEN_KEY) || "";
 let state = null;
@@ -108,6 +109,7 @@ async function loadState() {
   state = await api("/api/v1/bootstrap");
   authGate.hidden = true;
   app.hidden = false;
+  applyRoute();
   render();
 }
 
@@ -137,17 +139,43 @@ document.querySelector("[data-lock]").addEventListener("click", () => {
   showAuth("Oturum kilitlendi.");
 });
 
-document.querySelectorAll("[data-view]").forEach((button) => {
-  button.addEventListener("click", () => {
-    currentView = button.dataset.view;
-    document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item === button));
+function applyRoute() {
+  const [view, setupView] = window.location.hash.replace(/^#/, "").split("/");
+  currentView = view === "journal" || view === "setup" ? view : "today";
+  if (currentView === "setup" && setupViewIds.has(setupView)) currentSetupView = setupView;
+}
+
+function syncNavigation() {
+  document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item.dataset.view === currentView));
+  document.querySelectorAll("[data-setup-shortcut]").forEach((item) => item.classList.toggle("active", currentView === "setup" && item.dataset.setupShortcut === currentSetupView));
+  if (!state) return;
+  document.querySelector('[data-rail-count="plants"]').textContent = `${plantOptions().length} tür`;
+  document.querySelector('[data-rail-count="nutrients"]').textContent = `${state.hardware?.dosing_fluids?.length || 0} sıvı`;
+  document.querySelector('[data-rail-count="hardware"]').textContent = `${state.hardware?.device_assignments?.length || 0} I²C`;
+}
+
+function navigateTo(view, setupView = null) {
+  const nextHash = view === "setup" ? `#setup/${setupView || currentSetupView}` : `#${view}`;
+  if (window.location.hash === nextHash) {
+    applyRoute();
     window.scrollTo(0, 0);
     render();
-  });
+  } else {
+    window.location.hash = nextHash;
+  }
+}
+
+document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => navigateTo(button.dataset.view)));
+document.querySelectorAll("[data-setup-shortcut]").forEach((button) => button.addEventListener("click", () => navigateTo("setup", button.dataset.setupShortcut)));
+window.addEventListener("hashchange", () => {
+  applyRoute();
+  window.scrollTo(0, 0);
+  render();
 });
 
 function render() {
   if (!state) return;
+  syncNavigation();
   const [kicker, title] = viewMeta[currentView];
   viewKicker.textContent = kicker;
   viewTitle.textContent = title;
@@ -288,9 +316,7 @@ function renderSetup() {
     <nav class="setup-modules" aria-label="Kurulum bölümleri">${modules.map(([module, label, detail]) => `<button type="button" class="setup-module ${module === currentSetupView ? "active" : ""}" data-setup-view="${module}"><b>${html(label)}</b><small>${html(detail)}</small></button>`).join("")}</nav>
     <div data-setup-panel></div>`;
   viewContent.querySelectorAll("[data-setup-view]").forEach((button) => button.addEventListener("click", () => {
-    currentSetupView = button.dataset.setupView;
-    window.scrollTo(0, 0);
-    renderSetup();
+    navigateTo("setup", button.dataset.setupView);
   }));
   const panel = viewContent.querySelector("[data-setup-panel]");
   if (currentSetupView === "plants") renderPlants(panel);

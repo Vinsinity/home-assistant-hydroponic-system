@@ -54,6 +54,15 @@ body::before {
 .nav-item:hover { color: var(--mist); background: rgba(255,255,255,.025); }
 .nav-item.active { border-color: #28505a; color: var(--mist); background: var(--water-soft); }
 .nav-icon { display: grid; width: 21px; height: 21px; place-items: center; color: var(--water); font-family: var(--data); font-size: 15px; }
+.rail .rail-tools { display: grid; gap: 3px; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
+.rail-label { margin: 0 9px 8px; color: #64746f; font: 8px var(--data); letter-spacing: .13em; }
+.rail-tools button { display: grid; grid-template-columns: 25px minmax(0,1fr); align-items: center; gap: 0 9px; width: 100%; min-height: 39px; padding: 6px 9px; border: 1px solid transparent; border-radius: 7px; color: var(--muted); background: none; cursor: pointer; text-align: left; }
+.rail-tools button > span { grid-row: 1/3; display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--water); font: 8px var(--data); }
+.rail-tools button b { font-size: 10px; font-weight: 600; }
+.rail-tools button small { margin-top: 1px; color: #64746f; font: 7px var(--data); }
+.rail-tools button:hover { color: var(--mist); background: rgba(255,255,255,.022); }
+.rail-tools button.active { border-color: rgba(53,183,209,.24); color: var(--mist); background: rgba(53,183,209,.07); }
+.rail-tools button.active > span { border-color: #315057; background: var(--water-soft); }
 .rail-foot { display: grid; gap: 12px; margin-top: auto; }
 .local-seal { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
 .local-seal i, .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--leaf); box-shadow: 0 0 0 4px rgba(105,197,150,.08); }
@@ -322,11 +331,11 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
 .toast.error { border-color: rgba(238,118,108,.55); color: #ffd0cc; }
 
 @media (max-width: 900px) {
-  .app-shell { grid-template-columns: 78px minmax(0,1fr); }
-  .rail { padding: 24px 14px; }
-  .brand > span:last-child, .nav-item span:last-child, .rail-foot { display: none; }
-  .brand { justify-content: center; }
-  .nav-item { justify-content: center; padding: 11px; }
+  .app-shell { grid-template-columns: 210px minmax(0,1fr); }
+  .rail { padding: 22px 16px; }
+  .rail nav { margin-top: 38px; }
+  .rail .rail-tools { margin-top: 22px; }
+  .rail-foot { display: none; }
   .dashboard-grid { grid-template-columns: 1fr; }
   .dashboard-grid > section + section { border-top: 1px solid var(--line); border-left: 0; }
   .setup-section { grid-template-columns: 1fr; gap: 16px; }
@@ -343,7 +352,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
 @media (max-width: 680px) {
   .app-shell { display: block; padding-bottom: 68px; }
   .rail { position: fixed; z-index: 10; top: auto; right: 0; bottom: 0; left: 0; display: block; width: auto; height: 64px; padding: 7px 12px; border-top: 1px solid var(--line); border-right: 0; }
-  .brand, .rail-foot { display: none; }
+  .brand, .rail-foot, .rail .rail-tools { display: none; }
   .rail nav { grid-template-columns: repeat(3,1fr); gap: 5px; margin: 0; }
   .nav-item { display: grid; justify-items: center; gap: 1px; min-height: 49px; padding: 4px; font-size: 9px; }
   .nav-item span:last-child { display: inline; }
