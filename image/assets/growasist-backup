@@ -5,7 +5,7 @@ backup_dir=/var/backups/growasist
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 install -d -m 0750 "$backup_dir"
 
-PYTHONPATH=/opt/growasist /usr/bin/python3 -m growasist \
+PYTHONPATH=/opt/growasist/current /usr/bin/python3 -m growasist \
     --data-dir /var/lib/growasist backup "$backup_dir/growasist-$stamp.db"
 
 find "$backup_dir" -type f -name 'growasist-*.db' -mtime +30 -delete

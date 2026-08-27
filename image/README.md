@@ -69,5 +69,18 @@ Open `http://growasist.local:8080` and enter the printed token. Useful commands
 are `sudo growasistctl status`, `backup`, `logs`, `restart`, and
 `import-ha /path/to/journal.json`.
 
+Routine application development does not require another image build. From the
+development checkout, run:
+
+```sh
+GROWASIST_SSH_IDENTITY_FILE="$HOME/.ssh/id_ed25519" \
+./scripts/deploy-dev.sh growasist-admin@growasist.local
+```
+
+Each deployment is installed beside the current release. Activation happens
+only after a backup and a preflight check against a copy of the live journal;
+failed service health automatically restores the previous release. Manual
+recovery is available with `sudo growasistctl rollback`.
+
 The daily backups are on the same physical disk. Configure an off-device backup
 before treating the appliance as the only copy of a cultivation journal.

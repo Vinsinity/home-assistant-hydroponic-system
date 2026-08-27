@@ -71,6 +71,38 @@ sudo iwctl station wlan0 connect "YOUR_SSID"
 The current private appliance preset uses the `Europe/Istanbul` timezone and
 Turkey Wi-Fi regulatory domain.
 
+## Daily development without reflashing
+
+The appliance image is only the operating-system bootstrap. Application builds
+live under `/opt/growasist/releases`, while `/opt/growasist/current` atomically
+selects the active version. Cultivation data remains separately under
+`/var/lib/growasist`.
+
+From the Mac repository, deploy a development release with:
+
+```sh
+GROWASIST_SSH_IDENTITY_FILE="$HOME/.ssh/id_ed25519" \
+./scripts/deploy-dev.sh growasist-admin@growasist.local
+```
+
+The command runs the local test suite, synchronizes only application files,
+creates a new release directory, takes a consistent database backup, and opens
+the new code against a copy of the real journal. Only then does it switch the
+active symlink and restart the service. A failed health check restores the old
+release automatically.
+
+Useful release commands on the Raspberry Pi:
+
+```sh
+sudo growasistctl releases
+sudo growasistctl rollback
+sudo growasistctl status
+```
+
+Set `GROWASIST_SKIP_TESTS=1` only during an intentional diagnostic iteration.
+Rebuild the complete image only for operating-system, kernel, boot, base
+dependency, or recovery changes.
+
 ## Import the HA journal
 
 Copy the exported JSON to the new Raspberry Pi and import it only after the
@@ -105,6 +137,8 @@ Useful commands:
 sudo growasistctl status
 sudo growasistctl check
 sudo growasistctl backup
+sudo growasistctl releases
+sudo growasistctl rollback
 sudo growasistctl logs
 sudo growasistctl restart
 ```

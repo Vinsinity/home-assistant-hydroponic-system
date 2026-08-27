@@ -1,0 +1,156 @@
+#!/bin/sh
+set -eu
+
+release_root=/opt/growasist/releases
+current_link=/opt/growasist/current
+previous_link=/opt/growasist/previous
+service_name=growasist.service
+health_url=http://127.0.0.1:8080/api/v1/health
+
+run_release() {
+    release_dir=$1
+    shift
+    runuser -u growasist -- env PYTHONPATH="$release_dir" \
+        /usr/bin/python3 -m growasist "$@"
+}
+
+atomic_link() {
+    target=$1
+    link=$2
+    temporary_link="${link}.new.$$"
+    rm -f "$temporary_link"
+    ln -s "$target" "$temporary_link"
+    mv -Tf "$temporary_link" "$link"
+}
+
+healthcheck() {
+    attempts=${GROWASIST_HEALTH_ATTEMPTS:-30}
+    while [ "$attempts" -gt 0 ]; do
+        if curl --fail --silent --max-time 2 "$health_url" >/dev/null 2>&1; then
+            return 0
+        fi
+        attempts=$((attempts - 1))
+        sleep 1
+    done
+    return 1
+}
+
+validate_release() {
+    requested=$1
+    candidate=$(readlink -f "$requested")
+    case "$candidate" in
+        "$release_root"/*) ;;
+        *)
+            echo "Release must be inside $release_root" >&2
+            return 2
+            ;;
+    esac
+    test -f "$candidate/pyproject.toml"
+    test -f "$candidate/growasist/__main__.py"
+    test -f "$candidate/growasist/web/index.html"
+
+    chown -R root:root "$candidate"
+    chmod -R go-w "$candidate"
+    /usr/bin/python3 -m compileall -q "$candidate"
+
+    printf '%s\n' "$candidate"
+}
+
+preflight_release() {
+    candidate=$1
+    backup_path=$2
+    smoke_dir=$(mktemp -d /var/lib/growasist/.release-smoke.XXXXXX)
+    chown growasist:growasist "$smoke_dir"
+    install -m 0600 -o growasist -g growasist \
+        "$backup_path" "$smoke_dir/growasist.db"
+    if ! run_release "$candidate" --data-dir "$smoke_dir" check >/dev/null; then
+        find "$smoke_dir" -mindepth 1 -delete
+        rmdir "$smoke_dir"
+        echo "Release failed against a copy of the live journal: $candidate" >&2
+        return 1
+    fi
+    find "$smoke_dir" -mindepth 1 -delete
+    rmdir "$smoke_dir"
+}
+
+deploy_release() {
+    candidate=$(validate_release "$1")
+    old_release=$(readlink -f "$current_link" 2>/dev/null || true)
+    if [ "$candidate" = "$old_release" ]; then
+        echo "Release is already active: $candidate"
+        return 0
+    fi
+
+    backup_path=$(/usr/local/libexec/growasist-backup)
+    test -f "$backup_path"
+    preflight_release "$candidate" "$backup_path"
+    atomic_link "$candidate" "$current_link"
+
+    if systemctl restart "$service_name" && healthcheck; then
+        if [ -n "$old_release" ]; then
+            atomic_link "$old_release" "$previous_link"
+        fi
+        echo "Activated: $candidate"
+        return 0
+    fi
+
+    echo "Health check failed; restoring previous release" >&2
+    if [ -n "$old_release" ]; then
+        atomic_link "$old_release" "$current_link"
+        systemctl restart "$service_name" || true
+        healthcheck || echo "Previous release also failed its health check" >&2
+    fi
+    return 1
+}
+
+rollback_release() {
+    old_release=$(readlink -f "$current_link" 2>/dev/null || true)
+    rollback_target=$(readlink -f "$previous_link" 2>/dev/null || true)
+    if [ -z "$rollback_target" ] || [ ! -d "$rollback_target" ]; then
+        echo "No previous release is available" >&2
+        return 2
+    fi
+
+    /usr/local/libexec/growasist-backup
+    atomic_link "$rollback_target" "$current_link"
+    if systemctl restart "$service_name" && healthcheck; then
+        if [ -n "$old_release" ]; then
+            atomic_link "$old_release" "$previous_link"
+        fi
+        echo "Rolled back to: $rollback_target"
+        return 0
+    fi
+
+    echo "Rollback target failed; restoring current release" >&2
+    if [ -n "$old_release" ]; then
+        atomic_link "$old_release" "$current_link"
+        systemctl restart "$service_name" || true
+        healthcheck || echo "Current release also failed its health check" >&2
+    fi
+    return 1
+}
+
+list_releases() {
+    printf 'current:  %s\n' "$(readlink -f "$current_link" 2>/dev/null || echo none)"
+    printf 'previous: %s\n' "$(readlink -f "$previous_link" 2>/dev/null || echo none)"
+    find "$release_root" -mindepth 1 -maxdepth 1 -type d -print | sort
+}
+
+command=${1:-help}
+case "$command" in
+    deploy)
+        test "$#" -eq 2 || { echo "Usage: growasist-release-manager deploy RELEASE_DIR" >&2; exit 2; }
+        deploy_release "$2"
+        ;;
+    rollback)
+        test "$#" -eq 1 || { echo "Usage: growasist-release-manager rollback" >&2; exit 2; }
+        rollback_release
+        ;;
+    list)
+        list_releases
+        ;;
+    *)
+        echo "Usage: growasist-release-manager {deploy RELEASE_DIR|rollback|list}" >&2
+        exit 2
+        ;;
+esac

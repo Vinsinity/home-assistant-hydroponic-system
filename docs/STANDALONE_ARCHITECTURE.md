@@ -71,6 +71,19 @@ replacement and allow recovery if the current-state row fails checksum
 validation. They do not protect against loss of the storage device, so scheduled
 off-device backups remain mandatory.
 
+## Application release model
+
+The base image and application lifecycle are independent. The image installs an
+initial release under `/opt/growasist/releases`; an atomic `current` symlink
+selects what systemd runs. Development and product updates install a sibling
+release without changing `/var/lib/growasist`.
+
+Before activation, the release manager creates an online SQLite backup and runs
+the candidate against a disposable copy of the live journal. It then restarts
+the service and requires the local health endpoint to succeed. Failure switches
+the symlink back automatically. The previous successful release remains
+available for an explicit rollback.
+
 ## Delivery order
 
 1. Standalone core, durable storage, HA export import, health API. **Complete.**

@@ -9,8 +9,8 @@ Type=simple
 User=growasist
 Group=growasist
 SupplementaryGroups=i2c
-WorkingDirectory=/opt/growasist
-Environment=PYTHONPATH=/opt/growasist
+WorkingDirectory=/opt/growasist/current
+Environment=PYTHONPATH=/opt/growasist/current
 EnvironmentFile=/etc/growasist/growasist.env
 ExecStart=/usr/bin/python3 -m growasist --data-dir /var/lib/growasist serve --host 0.0.0.0 --port 8080
 Restart=on-failure

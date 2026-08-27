@@ -20,6 +20,9 @@
 - Add a reproducible Raspberry Pi 5 appliance image based on Raspberry Pi OS
   Lite 64-bit / Debian 13 Trixie, with systemd startup, SSH key-only access,
   I2C bus access, first-boot token generation, mDNS, and daily SQLite backups.
+- Separate application releases from the base image with atomic activation,
+  live-journal-copy preflight checks, health-gated rollback, and a one-command
+  Mac-to-Raspberry Pi development deployment flow.
 - Keep the automatic control engine disabled while standalone device adapters
   and deterministic safety rules are built.
 

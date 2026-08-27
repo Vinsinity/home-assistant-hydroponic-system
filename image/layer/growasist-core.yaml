@@ -2,7 +2,7 @@
 # X-Env-Layer-Name: growasist-core
 # X-Env-Layer-Category: application
 # X-Env-Layer-Desc: Native GrowAsist service, durable journal, I2C access and first-boot setup.
-# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Version: 1.1.0
 # X-Env-Layer-Requires: systemd-min,rpi-user-credentials,openssh-server
 #
 # X-Env-VarPrefix: growasist
@@ -26,21 +26,25 @@ mmdebstrap:
     - e2fsprogs
     - i2c-tools
     - python3
+    - rsync
     - sqlite3
   customize-hooks:
     - |-
       set -eu
       source_root="$IGconf_growasist_source_root"
+      release_name="image-${IGconf_artefact_version}"
+      release_dir="$1/opt/growasist/releases/$release_name"
       test -f "$source_root/pyproject.toml"
       test -f "$source_root/growasist/__main__.py"
-      install -d -m 0755 "$1/opt/growasist"
+      install -d -m 0755 "$release_dir"
       tar -C "$source_root" \
         --exclude='__pycache__' --exclude='*.pyc' --exclude='*.pyo' \
-        -cf - growasist custom_components | tar -C "$1/opt/growasist" -xf -
-      install -m 0644 "$source_root/pyproject.toml" "$1/opt/growasist/"
-      install -m 0644 "$source_root/README.md" "$1/opt/growasist/"
-      install -m 0644 "$source_root/LICENSE" "$1/opt/growasist/"
+        -cf - growasist custom_components | tar -C "$release_dir" -xf -
+      install -m 0644 "$source_root/pyproject.toml" "$release_dir/"
+      install -m 0644 "$source_root/README.md" "$release_dir/"
+      install -m 0644 "$source_root/LICENSE" "$release_dir/"
       chown -R root:root "$1/opt/growasist"
+      ln -s "releases/$release_name" "$1/opt/growasist/current"
     - |-
       set -eu
       assets="$IGconf_growasist_source_root/image/assets"
@@ -48,6 +52,7 @@ mmdebstrap:
       install -d -m 0755 "$1/usr/local/bin"
       install -m 0755 "$assets/growasist-firstboot" "$1/usr/local/libexec/"
       install -m 0755 "$assets/growasist-backup" "$1/usr/local/libexec/"
+      install -m 0755 "$assets/growasist-release-manager" "$1/usr/local/libexec/"
       install -m 0755 "$assets/growasistctl" "$1/usr/local/bin/"
       install -m 0644 "$assets/growasist-firstboot.service" "$1/etc/systemd/system/"
       install -m 0644 "$assets/growasist.service" "$1/etc/systemd/system/"
@@ -67,7 +72,7 @@ mmdebstrap:
       chroot "$1" install -d -m 0750 -o growasist -g growasist /var/lib/growasist
       chroot "$1" install -d -m 0750 -o growasist -g growasist /var/backups/growasist
       install -d -m 0700 "$1/etc/growasist"
-      chroot "$1" python3 -m compileall -q /opt/growasist
+      chroot "$1" python3 -m compileall -q /opt/growasist/current
     - |-
       set -eu
       config="$1/boot/firmware/config.txt"

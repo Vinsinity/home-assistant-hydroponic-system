@@ -2,7 +2,7 @@
 set -eu
 
 run_core() {
-    runuser -u growasist -- env PYTHONPATH=/opt/growasist \
+    runuser -u growasist -- env PYTHONPATH=/opt/growasist/current \
         /usr/bin/python3 -m growasist --data-dir /var/lib/growasist "$@"
 }
 
@@ -20,6 +20,20 @@ case "$command" in
         ;;
     backup)
         /usr/local/libexec/growasist-backup
+        ;;
+    deploy-release)
+        release_dir=${2:-}
+        if [ -z "$release_dir" ]; then
+            echo "Usage: sudo growasistctl deploy-release RELEASE_DIR" >&2
+            exit 2
+        fi
+        /usr/local/libexec/growasist-release-manager deploy "$release_dir"
+        ;;
+    rollback)
+        /usr/local/libexec/growasist-release-manager rollback
+        ;;
+    releases)
+        /usr/local/libexec/growasist-release-manager list
         ;;
     import-ha)
         export_file=${2:-}
@@ -43,7 +57,7 @@ case "$command" in
         journalctl -u growasist.service --no-pager -n 200
         ;;
     *)
-        echo "Usage: sudo growasistctl {status|token|check|backup|import-ha FILE|restart|logs}" >&2
+        echo "Usage: sudo growasistctl {status|token|check|backup|deploy-release DIR|rollback|releases|import-ha FILE|restart|logs}" >&2
         exit 2
         ;;
 esac
