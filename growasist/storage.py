@@ -352,6 +352,12 @@ class GrowAsistStore:
             state["plant_catalog"] = normalize_plant_catalog(
                 export.get("plant_catalog")
             )
+        if isinstance(export.get("profiles"), dict):
+            state["profiles"] = deepcopy(export["profiles"])
+        if isinstance(export.get("hardware"), dict):
+            state["hardware"] = deepcopy(export["hardware"])
+        if isinstance(export.get("assistant_settings"), dict):
+            state["assistant_settings"] = deepcopy(export["assistant_settings"])
         return self.save_state(state)
 
     def export_journal(self) -> dict[str, Any]:
@@ -365,6 +371,9 @@ class GrowAsistStore:
             "events": deepcopy(state.get("events", [])),
             "current_system_profile": deepcopy(state.get("system_profile", {})),
             "plant_catalog": deepcopy(state.get("plant_catalog", {})),
+            "profiles": deepcopy(state.get("profiles", {})),
+            "hardware": deepcopy(state.get("hardware", {})),
+            "assistant_settings": deepcopy(state.get("assistant_settings", {})),
         }
         return {**payload, "checksum": journal_checksum(payload)}
 

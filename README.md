@@ -16,8 +16,12 @@ The repository now includes a usable Home Assistant-independent product slice:
 - the append-only **Journal** records water, nutrients, pH, reservoir work,
   maintenance, calibration, stage changes, and notes without exposing update or
   delete operations;
-- **Setup** stores physical grow area, method/media, solution volumes, and light
-  fixture identity without pretending manually typed values are live controls;
+- **Setup** keeps the daily navigation compact while exposing dedicated nested
+  workspaces for the Plant Library, six editable stage profiles, nutrient
+  catalog, native I²C hardware, and dosing/pump calibration alongside physical
+  grow area, method/media, solution volumes, and fixture identity;
+- nutrient-product identity, physical hardware, and pump/fluid mapping remain
+  separate records, and saving any of them never enables equipment control;
 - SQLite WAL storage keeps immutable journal events and full state revisions;
 - checksummed exports from the current Home Assistant panel can be merged with
   `growasist import-ha` without treating missing events as deletions;

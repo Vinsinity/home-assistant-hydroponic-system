@@ -107,7 +107,16 @@ def test_sqlite_triggers_reject_direct_event_update_and_delete(tmp_path):
 
 def test_ha_export_import_merges_and_validates_checksum(tmp_path):
     source = GrowAsistStore(tmp_path / "source.db")
-    source.save_state(_state_with_event())
+    source_state = _state_with_event()
+    source_state["profiles"] = {"bloom": {"name": "Çiçeklenme", "planned_days": 63}}
+    source_state["hardware"] = {
+        "i2c_bus": 1,
+        "poll_interval": 45,
+        "dosing_policy": {},
+        "device_assignments": [],
+        "dosing_fluids": [{"id": "ph_up", "name": "pH+"}, {"id": "ph_down", "name": "pH-"}],
+    }
+    source.save_state(source_state)
     export = source.export_journal()
 
     target = GrowAsistStore(tmp_path / "target.db")
@@ -115,6 +124,8 @@ def test_ha_export_import_merges_and_validates_checksum(tmp_path):
 
     assert "pi_grow" in imported["cultivations"]["records"]
     assert any(event["id"] == "permanent_note" for event in imported["events"])
+    assert imported["profiles"]["bloom"]["planned_days"] == 63
+    assert imported["hardware"]["poll_interval"] == 45
     assert imported["engine_enabled"] is False
 
     corrupt = deepcopy(export)

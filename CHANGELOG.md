@@ -10,6 +10,12 @@
   and events instead of replacing them.
 - Add an authenticated, responsive standalone web panel with focused Today,
   Journal, and Setup workspaces and no Home Assistant frontend components.
+- Restore Plant Library, editable stage profiles, nutrient catalog, native I²C
+  hardware, and dosing/calibration as real nested Setup workspaces in the
+  standalone panel; all remain configuration-only while control is disabled.
+- Include profiles, hardware, dosing fluids, safety policy, and Assistant
+  settings in checksummed exports so moving away from Home Assistant does not
+  hide or discard the system configuration.
 - Add standalone application services and API routes for starting/finishing a
   cultivation, stage transitions, custom plants, physical setup, and immutable
   journal events.

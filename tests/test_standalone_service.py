@@ -106,6 +106,62 @@ def test_later_setup_edits_cannot_rewrite_a_grow_snapshot(tmp_path):
     )
 
 
+def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path):
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+
+    bootstrap = service.bootstrap()
+    assert set(("profiles", "plant_catalog", "hardware", "assistant_settings")) <= set(bootstrap)
+    assert bootstrap["plant_catalog"]["records"]["cannabis"]["cultivars"]
+
+    profile = service.update_profile(
+        {
+            "stage": "bloom",
+            "values": {"planned_days": 63, "photoperiod": 12, "ppm": 920},
+        }
+    )
+    plant = service.update_plant(
+        {
+            "plant_id": "tomato",
+            "values": {
+                **bootstrap["plant_catalog"]["records"]["tomato"],
+                "notes": "Yerel kullanıcı notu",
+            },
+        }
+    )
+    hardware = service.update_hardware(
+        {
+            "i2c_bus": 1,
+            "poll_interval": 45,
+            "dosing_fluids": [
+                {"id": "ph_up", "name": "pH+"},
+                {"id": "ph_down", "name": "pH-"},
+                {"id": "bloom_a", "name": "Bloom A", "category": "base"},
+            ],
+            "device_assignments": [
+                {"address": "0x63", "driver": "atlas_ph", "name": "EZO pH"},
+                {
+                    "address": "0x40",
+                    "driver": "waveshare_motor_hat",
+                    "name": "Motor HAT",
+                    "channels": [
+                        {"id": "A", "fluid_id": "bloom_a", "calibration": {"seconds": 10, "volume_ml": 12, "speed": 100}},
+                        {"id": "B", "fluid_id": "ph_down", "calibration": None},
+                    ],
+                },
+            ],
+        }
+    )
+
+    restarted = GrowAsistService(GrowAsistStore(service.store.database_path)).bootstrap()
+    assert profile["planned_days"] == 63
+    assert plant["notes"] == "Yerel kullanıcı notu"
+    assert hardware["poll_interval"] == 45
+    assert hardware["device_assignments"][1]["channels"][0]["calibration"]["flow_ml_s"] == 1.2
+    assert restarted["profiles"]["bloom"]["ppm"] == 920
+    assert restarted["hardware"]["dosing_fluids"][2]["id"] == "bloom_a"
+    assert restarted["engine_enabled"] is False
+
+
 def test_cannabis_requires_growth_type_when_no_catalog_cultivar_is_selected(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
 
@@ -217,3 +273,28 @@ def test_http_api_starts_grow_and_appends_immutable_event(standalone_http):
     export = json.loads(body)
     assert any(event["id"] == "api_note" for event in export["events"])
     assert export["checksum"]
+
+
+def test_http_api_saves_setup_modules(standalone_http):
+    for path, payload in (
+        ("/api/v1/profiles", {"stage": "veg", "values": {"planned_days": 31}}),
+        ("/api/v1/hardware", {"poll_interval": 60}),
+    ):
+        status, _, body = _request(
+            standalone_http,
+            "POST",
+            path,
+            token="test-secret",
+            payload=payload,
+        )
+        assert status == 200, body
+
+    _, _, body = _request(
+        standalone_http,
+        "GET",
+        "/api/v1/bootstrap",
+        token="test-secret",
+    )
+    bootstrap = json.loads(body)
+    assert bootstrap["profiles"]["veg"]["planned_days"] == 31
+    assert bootstrap["hardware"]["poll_interval"] == 60

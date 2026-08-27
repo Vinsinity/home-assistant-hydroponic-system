@@ -5,9 +5,16 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import date
 import hashlib
+import math
+import re
 from threading import RLock
 from typing import Any
 
+from custom_components.hydroponic_system.const import (
+    DEFAULT_DOSING_POLICY,
+    DEFAULT_PROFILES,
+    STAGE_ORDER,
+)
 from custom_components.hydroponic_system.grow_profile import normalize_system_profile
 from custom_components.hydroponic_system.journal import (
     active_cultivation,
@@ -23,6 +30,7 @@ from custom_components.hydroponic_system.journal import (
 from custom_components.hydroponic_system.plant_catalog import (
     cultivation_plant_snapshot,
     make_custom_plant_record,
+    normalize_plant_record,
     plant_plan,
 )
 
@@ -38,6 +46,45 @@ STAGE_LABELS = {
     "darkness": "Karanlık",
     "harvest": "Hasat / Kurutma",
 }
+
+_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+_PROFILE_LIMITS = {
+    "planned_days": (1, 365, True),
+    "photoperiod": (0, 24, False),
+    "light_intensity": (0, 100, False),
+    "day_temperature": (0, 60, False),
+    "night_temperature": (0, 60, False),
+    "humidity": (0, 100, False),
+    "vpd": (0, 5, False),
+    "co2": (0, 5000, False),
+    "ppm": (0, 5000, False),
+    "water_temperature": (0, 40, False),
+    "ph": (0, 14, False),
+    "do_minimum": (0, 30, False),
+}
+_HARDWARE_DRIVERS = {
+    "waveshare_motor_hat",
+    "pca9685_generic",
+    "atlas_do",
+    "atlas_ph",
+    "atlas_ec",
+    "atlas_rtd",
+}
+
+
+def _bounded_number(value: Any, default: Any, low: float, high: float, integer: bool = False) -> int | float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = float(default)
+    if not math.isfinite(number):
+        number = float(default)
+    number = max(low, min(high, number))
+    return int(round(number)) if integer else round(number, 3)
+
+
+def _text(value: Any, maximum: int, fallback: str = "") -> str:
+    return str(value if value not in (None, "") else fallback).strip()[:maximum]
 
 
 class GrowAsistService:
@@ -72,8 +119,11 @@ class GrowAsistService:
             "active_cultivation": deepcopy(active),
             "cultivations": cultivation_summaries(state),
             "events": deepcopy(state.get("events", [])),
+            "profiles": deepcopy(state.get("profiles", {})),
             "plant_catalog": deepcopy(state.get("plant_catalog", {})),
             "system_profile": deepcopy(state.get("system_profile", {})),
+            "hardware": deepcopy(state.get("hardware", {})),
+            "assistant_settings": deepcopy(state.get("assistant_settings", {})),
             "device_registry": deepcopy(state.get("device_registry", {})),
             "stage_labels": STAGE_LABELS,
             "storage": self.store.health(),
@@ -324,3 +374,239 @@ class GrowAsistService:
             state["system_profile"] = normalize_system_profile(payload)
             saved = self.store.save_state(state)
             return deepcopy(saved["system_profile"])
+
+    def update_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist one editable example stage profile without enabling control."""
+        with self._mutation_lock:
+            state = self.store.load_state()
+            stage = str(payload.get("stage") or "")
+            if stage not in STAGE_ORDER:
+                raise ValueError("Bilinmeyen yetiştirme aşaması")
+            values = payload.get("values")
+            if not isinstance(values, dict):
+                raise ValueError("Profil değerleri bir nesne olmalı")
+            current = deepcopy(state.get("profiles", {}).get(stage, DEFAULT_PROFILES[stage]))
+            for key, (low, high, integer) in _PROFILE_LIMITS.items():
+                if key in values:
+                    current[key] = _bounded_number(
+                        values[key], DEFAULT_PROFILES[stage][key], low, high, integer
+                    )
+            fluids = state.get("hardware", {}).get("dosing_fluids", [])
+            allowed_fluids = {
+                str(item.get("id"))
+                for item in fluids
+                if isinstance(item, dict)
+                and item.get("id")
+                and item.get("id") not in {"ph_up", "ph_down"}
+            }
+            if "nutrient_ids" in values:
+                requested = values.get("nutrient_ids")
+                if not isinstance(requested, list):
+                    raise ValueError("Besin eşlemesi bir liste olmalı")
+                current["nutrient_ids"] = list(
+                    dict.fromkeys(
+                        item for item in requested
+                        if isinstance(item, str) and item in allowed_fluids
+                    )
+                )
+            current["name"] = DEFAULT_PROFILES[stage]["name"]
+            state.setdefault("profiles", {})[stage] = current
+            saved = self.store.save_state(state)
+            return deepcopy(saved["profiles"][stage])
+
+    def update_plant(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Create or update one plant library record and its example targets."""
+        with self._mutation_lock:
+            state = self.store.load_state()
+            catalog = state.setdefault("plant_catalog", {})
+            records = catalog.setdefault("records", {})
+            plant_id = str(payload.get("plant_id") or "").strip().lower()
+            if not _ID_PATTERN.fullmatch(plant_id):
+                raise ValueError("Bitki kimliği küçük harf, rakam, _ veya - kullanmalı")
+            values = payload.get("values")
+            if not isinstance(values, dict):
+                raise ValueError("Bitki kaydı bir nesne olmalı")
+            fallback = records.get(plant_id)
+            if fallback is None:
+                name = _text(values.get("name"), 96)
+                if not name:
+                    raise ValueError("Bitki adı gerekli")
+                fallback = make_custom_plant_record(plant_id, name)
+            normalized = normalize_plant_record(
+                values, plant_id=plant_id, fallback=fallback
+            )
+            records[plant_id] = normalized
+            order = catalog.setdefault("order", [])
+            if plant_id not in order:
+                order.append(plant_id)
+            saved = self.store.save_state(state)
+            return deepcopy(saved["plant_catalog"]["records"][plant_id])
+
+    @staticmethod
+    def _normalize_fluid(value: Any, *, required_id: str | None = None) -> dict[str, Any]:
+        value = value if isinstance(value, dict) else {}
+        fluid_id = required_id or _text(value.get("id"), 64).lower()
+        if not _ID_PATTERN.fullmatch(fluid_id):
+            raise ValueError(f"Geçersiz sıvı kimliği: {fluid_id}")
+        default_name = "pH+" if fluid_id == "ph_up" else "pH−" if fluid_id == "ph_down" else fluid_id
+        return {
+            "id": fluid_id,
+            "name": _text(value.get("name"), 64, default_name),
+            "brand": _text(value.get("brand"), 64, "Belirtilmedi"),
+            "category": "ph" if required_id else _text(value.get("category"), 32, "other"),
+            "catalog_id": _text(value.get("catalog_id"), 96),
+            "line": _text(value.get("line"), 64),
+            "part": _text(value.get("part"), 32),
+            "npk": _text(value.get("npk"), 32),
+            "phase": _text(value.get("phase"), 32),
+            "medium": _text(value.get("medium"), 32),
+            "ph_direction": _text(value.get("ph_direction"), 8),
+            "required": bool(required_id),
+        }
+
+    @staticmethod
+    def _normalize_calibration(value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict):
+            return None
+        seconds = _bounded_number(value.get("seconds"), 0, 0, 30)
+        volume = _bounded_number(value.get("volume_ml"), 0, 0, 500)
+        speed = _bounded_number(value.get("speed"), 100, 20, 100, True)
+        if seconds < 1 or volume <= 0:
+            return None
+        return {
+            "seconds": round(float(seconds), 2),
+            "volume_ml": round(float(volume), 3),
+            "speed": speed,
+            "flow_ml_s": round(float(volume) / float(seconds), 5),
+            "calibrated_at": _text(value.get("calibrated_at"), 40),
+        }
+
+    @classmethod
+    def _normalize_assignments(cls, value: Any, fluid_ids: set[str]) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            raise ValueError("Donanım atamaları bir liste olmalı")
+        result = []
+        addresses: set[int] = set()
+        for raw in value[:32]:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                address = int(str(raw.get("address")), 0)
+            except (TypeError, ValueError) as error:
+                raise ValueError("I²C adresi sayı veya 0x biçiminde olmalı") from error
+            driver = str(raw.get("driver") or "")
+            if not 0x08 <= address <= 0x77 or driver not in _HARDWARE_DRIVERS:
+                raise ValueError("Geçersiz I²C adresi veya sürücüsü")
+            if address in addresses:
+                raise ValueError(f"0x{address:02X} adresi birden fazla kez kullanılmış")
+            addresses.add(address)
+            item = {
+                "address": address,
+                "driver": driver,
+                "name": _text(raw.get("name"), 64, f"I²C 0x{address:02X}"),
+            }
+            if driver == "waveshare_motor_hat":
+                incoming = {
+                    str(channel.get("id") or "").upper(): channel
+                    for channel in raw.get("channels", [])
+                    if isinstance(channel, dict)
+                }
+                channels = []
+                for channel_id in ("A", "B"):
+                    channel = incoming.get(channel_id, {})
+                    fluid_id = str(channel.get("fluid_id") or "unassigned")
+                    if fluid_id != "unassigned" and fluid_id not in fluid_ids:
+                        raise ValueError(f"Bilinmeyen dozaj sıvısı: {fluid_id}")
+                    calibration = cls._normalize_calibration(channel.get("calibration"))
+                    pump = channel.get("pump") if isinstance(channel.get("pump"), dict) else {}
+                    channels.append({
+                        "id": channel_id,
+                        "name": _text(channel.get("name"), 64, f"Motor {channel_id}"),
+                        "fluid_id": fluid_id,
+                        "pump": {
+                            "catalog_id": _text(pump.get("catalog_id"), 64, "nkp_dcl_s10y"),
+                            "brand": _text(pump.get("brand"), 64, "NKP"),
+                            "model": _text(pump.get("model"), 64, "NKP-DCL-S10Y"),
+                            "pump_type": _text(pump.get("pump_type"), 32, "peristaltic_dc"),
+                            "voltage": _bounded_number(pump.get("voltage"), 12, 0, 48),
+                            "power_w": _bounded_number(pump.get("power_w"), 5, 0, 100),
+                            "current_a": _bounded_number(pump.get("current_a"), 0.417, 0, 20),
+                            "flow_min_ml_min": _bounded_number(pump.get("flow_min_ml_min"), 0, 0, 10000),
+                            "flow_max_ml_min": _bounded_number(pump.get("flow_max_ml_min"), 0, 0, 10000),
+                            "pwm": bool(pump.get("pwm", True)),
+                            "reversible": bool(pump.get("reversible", True)),
+                            "verified": bool(pump.get("verified", False)),
+                        },
+                        "calibration": calibration,
+                        "calibration_status": "measured" if calibration else "unverified",
+                    })
+                item["channels"] = channels
+            result.append(item)
+        return result
+
+    @staticmethod
+    def _normalize_dosing_policy(value: Any) -> dict[str, Any]:
+        value = value if isinstance(value, dict) else {}
+        limits = {
+            "nutrient_interval_minutes": (30, 1440, True),
+            "mixing_wait_minutes": (5, 180, True),
+            "remeasure_wait_minutes": (1, 60, True),
+            "ph_interval_minutes": (10, 360, True),
+            "ph_deadband": (0.02, 1, False),
+            "max_nutrient_dose_ml": (0.1, 500, False),
+            "max_ph_dose_ml": (0.1, 50, False),
+        }
+        result = {}
+        for key, (low, high, integer) in limits.items():
+            result[key] = _bounded_number(
+                value.get(key), DEFAULT_DOSING_POLICY[key], low, high, integer
+            )
+        result["ph_single_direction"] = True
+        result["sequence"] = "nutrients_mix_remeasure_ph"
+        return result
+
+    def update_hardware(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist hardware definitions, fluid mappings and safety limits only."""
+        with self._mutation_lock:
+            state = self.store.load_state()
+            hardware = deepcopy(state.get("hardware", {}))
+            for key in ("i2c_bus", "poll_interval", "device_assignments", "dosing_fluids", "dosing_policy"):
+                if key in payload:
+                    hardware[key] = deepcopy(payload[key])
+
+            raw_fluids = hardware.get("dosing_fluids", [])
+            if not isinstance(raw_fluids, list):
+                raise ValueError("Besin ve sıvı kataloğu bir liste olmalı")
+            indexed = {
+                str(item.get("id")): item
+                for item in raw_fluids
+                if isinstance(item, dict) and item.get("id")
+            }
+            fluids = [
+                self._normalize_fluid(indexed.get("ph_up"), required_id="ph_up"),
+                self._normalize_fluid(indexed.get("ph_down"), required_id="ph_down"),
+            ]
+            seen = {"ph_up", "ph_down"}
+            for raw in raw_fluids:
+                if not isinstance(raw, dict):
+                    continue
+                fluid_id = str(raw.get("id") or "").lower()
+                if not fluid_id or fluid_id in seen:
+                    continue
+                fluid = self._normalize_fluid(raw)
+                seen.add(fluid["id"])
+                fluids.append(fluid)
+
+            hardware = {
+                "i2c_bus": _bounded_number(hardware.get("i2c_bus"), 1, 0, 255, True),
+                "poll_interval": _bounded_number(hardware.get("poll_interval"), 30, 10, 300, True),
+                "dosing_policy": self._normalize_dosing_policy(hardware.get("dosing_policy")),
+                "dosing_fluids": fluids,
+                "device_assignments": self._normalize_assignments(
+                    hardware.get("device_assignments", []), seen
+                ),
+            }
+            state["hardware"] = hardware
+            state["engine_enabled"] = False
+            saved = self.store.save_state(state)
+            return deepcopy(saved["hardware"])
