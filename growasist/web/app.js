@@ -51,6 +51,7 @@ let state = null;
 let currentView = "today";
 let currentSetupView = "overview";
 let selectedPlantId = "";
+let nutrientCatalogBrand = "all";
 let toastTimer = null;
 
 function html(value) {
@@ -298,14 +299,14 @@ function renderSetup() {
   const modules = [
     ["overview", "Alan ve ışık", "Yöntem, medya ve armatür"],
     ["plants", "Bitki kütüphanesi", `${plantOptions().length} tür`],
-    ["nutrients", "Besinler", `${state.hardware?.dosing_fluids?.length || 0} sıvı`],
+    ["nutrients", "Besinler", `${state.hardware?.dosing_fluids?.length || 0} ürün`],
     ["hardware", "Donanım", `${state.hardware?.device_assignments?.length || 0} kablolu cihaz`],
     ["dosing", "Dozaj", "Pompa ve kalibrasyon"],
   ];
   const descriptions = {
     overview: ["Sistem", "Yöntemini, yetiştirme medyanı ve ışığını tanımla."],
     plants: ["Kütüphane", "Her bitkinin aşamalarını ve o aşamada kullandığın besinleri düzenle."],
-    nutrients: ["Kütüphane", "Elindeki besin ve sıvı ürünlerini kaydet."],
+    nutrients: ["Kütüphane", "Hazır ürünleri bul veya elindeki özel ürünü ekle."],
     hardware: ["Sistem", "Kablolu ve ağdaki cihazlarını tanımla."],
     dosing: ["Sistem", "Pompa bağlantılarını ve kalibrasyonlarını yönet."],
   };
@@ -462,7 +463,7 @@ async function savePlant(event) {
 }
 
 function fluidLabel(fluid) {
-  const categories = { ph: "pH düzenleyici", base: "Ana besin", supplement: "Takviye", booster: "Güçlendirici", other: "Diğer" };
+  const categories = { ph: "pH düzenleyici", base: "Ana besin", supplement: "Takviye", booster: "Güçlendirici", biostimulant: "Biyostimülan", conditioner: "Ortam düzenleyici", cleaner: "Temizleme / bitiş", other: "Diğer" };
   return categories[fluid.category] || fluid.category || "Diğer";
 }
 
@@ -478,9 +479,43 @@ function fluidMediumLabel(value) {
 
 function renderNutrients(panel) {
   const fluids = state.hardware?.dosing_fluids || [];
-  panel.innerHTML = `<div class="page-actions"><div><strong>${fluids.length} ürün</strong><p>Burada ürünlerini kaydet; bitkiye ve aşamaya Bitki Kütüphanesi'nden bağla.</p></div><button class="primary-button" type="button" data-add-fluid>Ürün ekle</button></div><div class="record-ledger">${fluids.map((fluid) => `<button type="button" class="record-row" data-fluid-id="${html(fluid.id)}"><span class="record-code">${html(fluid.required ? "pH" : "N")}</span><span><b>${html(fluid.name)}</b><small>${html(fluid.brand || "Belirtilmedi")} · ${html(fluid.line || fluid.part || "Seri belirtilmedi")}</small></span><span>${html(fluidLabel(fluid))}</span><small>${html(fluidPhaseLabel(fluid.phase))} · ${html(fluidMediumLabel(fluid.medium))}</small><em>Düzenle</em></button>`).join("")}</div>`;
+  const catalog = state.nutrient_catalog || {};
+  const brands = (catalog.brand_order || []).map((brandId) => catalog.brands?.[brandId]).filter(Boolean);
+  const products = (catalog.product_order || []).map((productId) => catalog.products?.[productId]).filter(Boolean);
+  const selectedCatalogIds = new Set(fluids.map((fluid) => fluid.catalog_id).filter(Boolean));
+  const brandOptions = [["all",`Tüm markalar · ${products.length}`], ...brands.map((brand) => [brand.id, `${brand.name} · ${brand.product_ids?.length || 0}`])];
+  panel.innerHTML = `<section class="nutrient-catalog"><header class="catalog-head"><div><span class="record-type">Hazır ürün kütüphanesi</span><h3>${brands.length} marka · ${products.length} ürün</h3><p>Markayı veya ürünü bul, detayını kontrol et ve tek tıkla kendi besin listene ekle.</p></div><button class="secondary-button" type="button" data-add-fluid>Özel ürün ekle</button></header>
+    <div class="catalog-tools"><label><span>Ürün ara</span><input type="search" data-catalog-search placeholder="Örn. Sensi, CANNA, CalMag, Bloom…" autocomplete="off"></label><label><span>Marka</span><select data-catalog-brand>${optionRows(brandOptions,nutrientCatalogBrand)}</select></label></div>
+    <div class="catalog-results">${products.map((product) => `<button type="button" class="catalog-product ${selectedCatalogIds.has(product.id) ? "selected" : ""}" data-catalog-product="${html(product.id)}" data-catalog-brand-id="${html(product.brand_id)}" data-catalog-search-text="${html(`${product.brand} ${product.name} ${product.line} ${product.part} ${product.npk}`.toLocaleLowerCase("tr"))}"><span class="catalog-brand">${html(product.brand)}</span><span><b>${html(product.name)}</b><small>${html(product.line)}${product.part ? ` · ${html(product.part)}` : ""}</small></span><span><b>${html(fluidLabel(product))}</b><small>${html(fluidPhaseLabel(product.phase))} · ${html(fluidMediumLabel(product.medium))}</small></span><span><b>${html(product.npk || "NPK etikette")}</b><small>${html(product.form === "powder" ? "Toz" : "Sıvı")} · ${html(product.input_type === "organic" ? "Organik" : product.input_type === "biological" ? "Biyolojik" : "Mineral")}</small></span><em>${selectedCatalogIds.has(product.id) ? "Eklendi" : "İncele"}</em></button>`).join("")}</div></section>
+    <section class="my-nutrients"><header class="section-head"><div><h3>Benim ürünlerim</h3><small>${fluids.length} ürün · Bitkiye ve aşamaya buradan eklediklerini bağlarsın</small></div></header><div class="record-ledger">${fluids.map((fluid) => `<button type="button" class="record-row" data-fluid-id="${html(fluid.id)}"><span class="record-code">${html(fluid.required ? "pH" : "N")}</span><span><b>${html(fluid.name)}</b><small>${html(fluid.brand || "Belirtilmedi")} · ${html(fluid.line || fluid.part || "Özel ürün")}</small></span><span>${html(fluidLabel(fluid))}</span><small>${html(fluidPhaseLabel(fluid.phase))} · ${html(fluidMediumLabel(fluid.medium))}</small><em>Düzenle</em></button>`).join("")}</div></section>`;
   panel.querySelector("[data-add-fluid]").addEventListener("click", () => openFluidDialog());
   panel.querySelectorAll("[data-fluid-id]").forEach((button) => button.addEventListener("click", () => openFluidDialog(fluids.find((item) => item.id === button.dataset.fluidId))));
+  const search = panel.querySelector("[data-catalog-search]");
+  const brand = panel.querySelector("[data-catalog-brand]");
+  const applyFilters = () => {
+    const query = search.value.trim().toLocaleLowerCase("tr");
+    nutrientCatalogBrand = brand.value;
+    panel.querySelectorAll("[data-catalog-product]").forEach((row) => {
+      row.hidden = (nutrientCatalogBrand !== "all" && row.dataset.catalogBrandId !== nutrientCatalogBrand) || (query && !row.dataset.catalogSearchText.includes(query));
+    });
+  };
+  search.addEventListener("input", applyFilters);
+  brand.addEventListener("change", applyFilters);
+  applyFilters();
+  panel.querySelectorAll("[data-catalog-product]").forEach((button) => button.addEventListener("click", () => openCatalogProductDialog(catalog.products?.[button.dataset.catalogProduct], selectedCatalogIds.has(button.dataset.catalogProduct))));
+}
+
+function openCatalogProductDialog(product, selected = false) {
+  if (!product) return;
+  const typeLabels = { mineral: "Mineral", organic: "Organik", biological: "Biyolojik" };
+  openDialog({ kicker: product.brand, title: product.name, submitLabel: selected ? "Kütüphanemde" : "Kütüphaneme ekle", secondaryLabel: "Kapat",
+    body: `<div class="catalog-detail-lead"><span>${html(product.line)}${product.part ? ` · ${html(product.part)}` : ""}</span><p>${html(product.description)}</p></div><dl class="catalog-detail-grid"><div><dt>Kategori</dt><dd>${html(fluidLabel(product))}</dd></div><div><dt>Aşama</dt><dd>${html(fluidPhaseLabel(product.phase))}</dd></div><div><dt>Medya</dt><dd>${html(fluidMediumLabel(product.medium))}</dd></div><div><dt>Form</dt><dd>${html(product.form === "powder" ? "Toz" : "Sıvı")}</dd></div><div><dt>İçerik tipi</dt><dd>${html(typeLabels[product.input_type] || product.input_type)}</dd></div><div><dt>NPK</dt><dd>${html(product.npk || "Üretici etiketi/pazara göre kontrol edilmeli")}</dd></div></dl><p class="catalog-source">Ürün kimliği ve sınıflandırma resmi üretici dizininden doğrulandı · ${html(product.verified_on)} · <a href="${html(product.source_url)}" target="_blank" rel="noreferrer">Üretici kaynağı</a></p>`,
+    onSubmit: async () => {
+      if (selected) { dialog.close(); return; }
+      await api("/api/v1/nutrients/catalog/add", { method: "POST", body: JSON.stringify({ catalog_id: product.id }) });
+      dialog.close(); await loadState(); currentSetupView = "nutrients"; showToast(`${product.name} ürünlerine eklendi.`);
+    },
+  });
 }
 
 function openFluidDialog(fluid = null) {
@@ -488,11 +523,12 @@ function openFluidDialog(fluid = null) {
   const phaseOptions = [["all","Tüm aşamalar"], ...stageOrder.map((stage) => [stage, state.stage_labels[stage] || stage])];
   const mediumOptions = [["all","Tüm medyalar"],["hydro/coco","Hidroponik / Coco"],["hydro","Hidroponik"],["coco","Coco"],["soil","Toprak"]];
   openDialog({ kicker: "Besinler", title: edit ? "Ürünü düzenle" : "Ürün ekle", submitLabel: "Kaydet",
-    body: `<div class="dialog-grid"><label><span>Ürün adı</span><input name="name" value="${html(fluid?.name || "")}" required></label><label><span>Marka</span><input name="brand" value="${html(fluid?.brand || "")}"></label><label><span>Kategori</span><select name="category" ${fluid?.required ? "disabled" : ""}>${[["base","Ana besin"],["supplement","Takviye"],["booster","Güçlendirici"],["other","Diğer"],["ph","pH düzenleyici"]].map(([id,label]) => `<option value="${id}" ${(fluid?.category || "other") === id ? "selected" : ""}>${label}</option>`).join("")}</select></label></div><details class="advanced-settings dialog-advanced"><summary>Ürün detayları</summary><div class="dialog-grid"><label><span>Seri</span><input name="line" value="${html(fluid?.line || "")}"></label><label><span>Parça</span><input name="part" value="${html(fluid?.part || "")}"></label><label><span>NPK</span><input name="npk" value="${html(fluid?.npk || "")}"></label><label><span>Üreticinin önerdiği aşama</span><select name="phase">${optionRows(phaseOptions, fluid?.phase || "all")}</select></label><label><span>Üreticinin önerdiği medya</span><select name="medium">${optionRows(mediumOptions, fluid?.medium || "all")}</select></label></div></details>`,
+    body: `<div class="dialog-grid"><label><span>Ürün adı</span><input name="name" value="${html(fluid?.name || "")}" required></label><label><span>Marka</span><input name="brand" value="${html(fluid?.brand || "")}"></label><label><span>Kategori</span><select name="category" ${fluid?.required ? "disabled" : ""}>${[["base","Ana besin"],["supplement","Takviye"],["booster","Güçlendirici"],["biostimulant","Biyostimülan"],["conditioner","Ortam düzenleyici"],["cleaner","Temizleme / bitiş"],["other","Diğer"],["ph","pH düzenleyici"]].map(([id,label]) => `<option value="${id}" ${(fluid?.category || "other") === id ? "selected" : ""}>${label}</option>`).join("")}</select></label></div><details class="advanced-settings dialog-advanced"><summary>Ürün detayları</summary><div class="dialog-grid"><label><span>Seri</span><input name="line" value="${html(fluid?.line || "")}"></label><label><span>Parça</span><input name="part" value="${html(fluid?.part || "")}"></label><label><span>NPK</span><input name="npk" value="${html(fluid?.npk || "")}"></label><label><span>Üreticinin önerdiği aşama</span><select name="phase">${optionRows(phaseOptions, fluid?.phase || "all")}</select></label><label><span>Üreticinin önerdiği medya</span><select name="medium">${optionRows(mediumOptions, fluid?.medium || "all")}</select></label></div></details>`,
     onSubmit: async (data) => {
       const fluids = JSON.parse(JSON.stringify(state.hardware?.dosing_fluids || []));
       const target = edit ? fluids.find((item) => item.id === fluid.id) : { id: `fluid_${id().slice(0,16)}`, required: false };
       for (const key of ["name","brand","category","line","part","npk","phase","medium"]) if (data.has(key)) target[key] = data.get(key);
+      if (edit && target.catalog_id && target.name !== fluid.name) { target.catalog_id = ""; target.official = false; }
       if (!edit) fluids.push(target);
       await api("/api/v1/hardware", { method: "POST", body: JSON.stringify({ dosing_fluids: fluids }) });
       dialog.close(); await loadState(); currentSetupView = "nutrients"; showToast("Besin kataloğu kaydedildi.");

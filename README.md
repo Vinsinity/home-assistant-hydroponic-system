@@ -21,6 +21,10 @@ The repository now includes a usable Home Assistant-independent product slice:
   and physical **System** setup. Plant-specific stage targets and product choices
   live together in Plant Library; nutrients, area and light, hardware, and dosing
   each keep a stable route;
+- **Nutrients** includes a versioned built-in catalogue of 367 products across
+  20 major manufacturers, with brand/product search, line/part, phase, medium,
+  form, known NPK, short purpose, verification date, and official source. A
+  product is copied into the user's own library only after explicit selection;
 - nutrient-product identity, physical hardware, and pump/fluid mapping remain
   separate records, and saving any of them never enables equipment control;
 - SQLite WAL storage keeps immutable journal events and full state revisions;
@@ -35,7 +39,8 @@ The repository now includes a usable Home Assistant-independent product slice:
   SSH; routine development does not rebuild or rewrite the appliance image.
 
 See [the standalone architecture](docs/STANDALONE_ARCHITECTURE.md) and
-[Raspberry Pi development guide](docs/RASPBERRY_PI.md). Automatic equipment
+[Raspberry Pi development guide](docs/RASPBERRY_PI.md), plus the
+[manufacturer nutrient catalogue](docs/NUTRIENT_CATALOG.md). Automatic equipment
 control remains disabled in this slice.
 
 On the Raspberry Pi appliance, open `http://<raspberry-pi-ip>` and enter the

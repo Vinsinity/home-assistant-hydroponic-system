@@ -1,6 +1,7 @@
 """Standalone SQLite durability and Home Assistant migration tests."""
 
 from copy import deepcopy
+import json
 import sqlite3
 
 import pytest
@@ -145,3 +146,54 @@ def test_online_backup_is_a_valid_independent_database(tmp_path):
     assert any(
         event["id"] == "permanent_note" for event in backup.load_state()["events"]
     )
+
+
+def test_manufacturer_catalog_is_persisted_without_replacing_user_fluids(tmp_path):
+    store = GrowAsistStore(tmp_path / "growasist.db")
+    state = store.load_state()
+    state["hardware"]["dosing_fluids"].append(
+        {"id": "my_mix", "name": "My Mix", "category": "base"}
+    )
+    store.save_state(state)
+
+    restarted = GrowAsistStore(store.database_path).load_state()
+
+    assert len(restarted["nutrient_catalog"]["products"]) >= 367
+    assert any(item["id"] == "my_mix" for item in restarted["hardware"]["dosing_fluids"])
+    assert restarted["hardware"]["dosing_fluids"][0]["category"] == "ph"
+
+
+def test_catalog_upgrade_keeps_selected_products_and_immutable_journal(tmp_path):
+    store = GrowAsistStore(tmp_path / "growasist.db")
+    state = _state_with_event()
+    state["hardware"] = {
+        "i2c_bus": 1,
+        "poll_interval": 30,
+        "dosing_policy": {},
+        "device_assignments": [],
+        "dosing_fluids": [
+            {"id": "ph_up", "name": "pH+"},
+            {"id": "ph_down", "name": "pH−"},
+            {"id": "my_base", "name": "My Base", "category": "base"},
+        ],
+    }
+    saved = store.save_state(state)
+    saved["nutrient_catalog"] = {
+        "catalog_version": "old-version",
+        "products": {},
+    }
+    payload = json.dumps(saved, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    checksum = journal.journal_checksum(saved)
+    with sqlite3.connect(store.database_path) as connection:
+        connection.execute(
+            "UPDATE current_state SET payload = ?, checksum = ? WHERE singleton = 1",
+            (payload, checksum),
+        )
+
+    upgraded_store = GrowAsistStore(store.database_path)
+    upgraded = upgraded_store.load_state()
+
+    assert len(upgraded["nutrient_catalog"]["products"]) >= 367
+    assert any(item["id"] == "my_base" for item in upgraded["hardware"]["dosing_fluids"])
+    assert any(event["id"] == "permanent_note" for event in upgraded["events"])
+    assert upgraded_store.health()["event_count"] == 3

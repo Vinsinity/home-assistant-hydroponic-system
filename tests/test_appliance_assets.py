@@ -81,6 +81,8 @@ def test_setup_tools_remain_visible_and_addressable() -> None:
         assert f'"{module}"' in application
     assert 'data-setup-shortcut="profiles"' not in shell
     assert "state.profiles?.[stage]?.nutrient_ids" not in application
+    assert "Hazır ürün kütüphanesi" in application
+    assert "/api/v1/nutrients/catalog/add" in application
     assert "#setup/${setupView || currentSetupView}" in application
     assert "Kütüphane" in shell
     assert "Sistem" in shell

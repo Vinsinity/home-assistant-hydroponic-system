@@ -123,6 +123,7 @@ class GrowAsistService:
             "events": deepcopy(state.get("events", [])),
             "profiles": deepcopy(state.get("profiles", {})),
             "plant_catalog": deepcopy(state.get("plant_catalog", {})),
+            "nutrient_catalog": deepcopy(state.get("nutrient_catalog", {})),
             "system_profile": deepcopy(state.get("system_profile", {})),
             "hardware": deepcopy(state.get("hardware", {})),
             "assistant_settings": deepcopy(state.get("assistant_settings", {})),
@@ -498,8 +499,64 @@ class GrowAsistService:
             "phase": _text(value.get("phase"), 32),
             "medium": _text(value.get("medium"), 32),
             "ph_direction": _text(value.get("ph_direction"), 8),
+            "form": _text(value.get("form"), 24),
+            "input_type": _text(value.get("input_type"), 24),
+            "description": _text(value.get("description"), 480),
+            "source_url": _text(value.get("source_url"), 320),
+            "verified_on": _text(value.get("verified_on"), 16),
+            "official": bool(value.get("official", False)),
             "required": bool(required_id),
         }
+
+    def add_catalog_nutrient(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Copy one official catalogue product into the user's fluid library."""
+        catalog_id = _text(payload.get("catalog_id"), 96)
+        if not catalog_id:
+            raise ValueError("Katalog ürünü seçilmelidir")
+        with self._mutation_lock:
+            state = self.store.load_state()
+            product = state.get("nutrient_catalog", {}).get("products", {}).get(catalog_id)
+            if not isinstance(product, dict):
+                raise ValueError("Katalog ürünü bulunamadı")
+            fluids = state.setdefault("hardware", {}).setdefault("dosing_fluids", [])
+            existing = next(
+                (
+                    item for item in fluids
+                    if isinstance(item, dict) and item.get("catalog_id") == catalog_id
+                ),
+                None,
+            )
+            if existing is not None:
+                return {"created": False, "fluid": deepcopy(existing)}
+            fluid_id = f"nut_{hashlib.sha256(catalog_id.encode()).hexdigest()[:20]}"
+            name = str(product.get("name") or catalog_id)
+            lowered = name.casefold()
+            ph_direction = ""
+            if product.get("category") == "ph":
+                ph_direction = "down" if any(word in lowered for word in ("down", "min")) else "up"
+            raw = {
+                key: deepcopy(product.get(key))
+                for key in (
+                    "name", "brand", "category", "line", "part", "npk",
+                    "phase", "medium", "form", "input_type", "description",
+                    "source_url", "verified_on", "official",
+                )
+            }
+            raw.update({
+                "id": fluid_id,
+                "catalog_id": catalog_id,
+                "ph_direction": ph_direction,
+                "required": False,
+            })
+            fluids.append(raw)
+            normalized = self._normalize_fluid(raw)
+            fluids[-1] = normalized
+            saved = self.store.save_state(state)
+            stored = next(
+                item for item in saved["hardware"]["dosing_fluids"]
+                if item.get("id") == fluid_id
+            )
+            return {"created": True, "fluid": deepcopy(stored)}
 
     @staticmethod
     def _normalize_calibration(value: Any) -> dict[str, Any] | None:

@@ -28,6 +28,10 @@ from custom_components.hydroponic_system.journal import (
     migrate_journal,
     utc_now,
 )
+from custom_components.hydroponic_system.nutrient_catalog import (
+    NUTRIENT_CATALOG_VERSION,
+    default_nutrient_catalog,
+)
 from custom_components.hydroponic_system.plant_catalog import (
     default_plant_catalog,
     normalize_plant_catalog,
@@ -59,6 +63,7 @@ def default_state() -> dict[str, Any]:
         "system_profile": deepcopy(DEFAULT_SYSTEM_PROFILE),
         "assistant_settings": deepcopy(DEFAULT_ASSISTANT_SETTINGS),
         "plant_catalog": default_plant_catalog(),
+        "nutrient_catalog": default_nutrient_catalog(),
         "cultivations": empty_cultivations(),
         "events": [],
         "hardware": {
@@ -67,8 +72,8 @@ def default_state() -> dict[str, Any]:
             "dosing_policy": deepcopy(DEFAULT_DOSING_POLICY),
             "device_assignments": [],
             "dosing_fluids": [
-                {"id": "ph_up", "name": "pH+", "required": True},
-                {"id": "ph_down", "name": "pH−", "required": True},
+                {"id": "ph_up", "name": "pH+", "category": "ph", "ph_direction": "up", "required": True},
+                {"id": "ph_down", "name": "pH−", "category": "ph", "ph_direction": "down", "required": True},
             ],
         },
         "device_registry": {
@@ -106,6 +111,16 @@ class GrowAsistStore:
             ).fetchone()
         if exists is None:
             self.save_state(default_state())
+            return
+        with self._connect() as connection:
+            state = self._load_state_from_connection(connection)
+        catalog = state.get("nutrient_catalog") if isinstance(state, dict) else None
+        if not isinstance(catalog, dict) or catalog.get("catalog_version") != NUTRIENT_CATALOG_VERSION:
+            state = state if isinstance(state, dict) else default_state()
+            # The manufacturer catalogue is versioned application data.  User
+            # products remain in hardware.dosing_fluids and are never replaced.
+            state["nutrient_catalog"] = default_nutrient_catalog()
+            self.save_state(state)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
@@ -243,6 +258,17 @@ class GrowAsistStore:
         result["plant_catalog"] = normalize_plant_catalog(
             value.get("plant_catalog")
         )
+        # Built-in manufacturer facts are read-only and upgraded as a unit.
+        # Imported state must not be able to replace official catalogue data.
+        result["nutrient_catalog"] = default_nutrient_catalog()
+        fluids = result.get("hardware", {}).get("dosing_fluids", [])
+        if isinstance(fluids, list):
+            for fluid in fluids:
+                if not isinstance(fluid, dict) or fluid.get("id") not in {"ph_up", "ph_down"}:
+                    continue
+                fluid["category"] = "ph"
+                fluid["required"] = True
+                fluid["ph_direction"] = "up" if fluid["id"] == "ph_up" else "down"
         # Legacy generic stage profiles used to carry product ids.  Product
         # selection is plant-specific now; keep the old revision recoverable
         # but never let unrelated plants inherit those assignments.

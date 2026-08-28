@@ -17,6 +17,10 @@
 - Remove the misleading generic Profiles workspace and generic stage-to-product
   assignments. Nutrient products now belong to one plant and one stage inside
   Plant Library, so unrelated species never inherit the same product list.
+- Add a versioned SQLite manufacturer nutrient catalogue with 367 products from
+  20 major brands. The Nutrients workspace now supports brand/product search,
+  product details with official source links, and idempotent one-click copying
+  into the user's own product list while preserving custom products.
 - Reduce the visible grow-start and setup fields to the decisions needed now;
   keep product selection, physical measurements, device connection values,
   pump calibration, and safety limits in clearly labelled optional sections.

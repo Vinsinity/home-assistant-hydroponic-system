@@ -127,7 +127,8 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
 
     bootstrap = service.bootstrap()
-    assert set(("profiles", "plant_catalog", "hardware", "assistant_settings")) <= set(bootstrap)
+    assert set(("profiles", "plant_catalog", "nutrient_catalog", "hardware", "assistant_settings")) <= set(bootstrap)
+    assert len(bootstrap["nutrient_catalog"]["products"]) >= 367
     assert bootstrap["plant_catalog"]["records"]["cannabis"]["cultivars"]
 
     profile = service.update_profile(
@@ -177,6 +178,29 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
     assert restarted["profiles"]["bloom"]["ppm"] == 920
     assert restarted["hardware"]["dosing_fluids"][2]["id"] == "bloom_a"
     assert restarted["engine_enabled"] is False
+
+
+def test_official_catalog_product_is_added_once_and_keeps_details(tmp_path):
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    catalog = service.bootstrap()["nutrient_catalog"]
+    product = next(
+        item for item in catalog["products"].values()
+        if item["brand"] == "Advanced Nutrients" and item["name"] == "Big Bud"
+    )
+
+    first = service.add_catalog_nutrient({"catalog_id": product["id"]})
+    second = service.add_catalog_nutrient({"catalog_id": product["id"]})
+    fluids = service.bootstrap()["hardware"]["dosing_fluids"]
+    imported = [item for item in fluids if item.get("catalog_id") == product["id"]]
+
+    assert first["created"] is True
+    assert second["created"] is False
+    assert len(imported) == 1
+    assert imported[0]["brand"] == "Advanced Nutrients"
+    assert imported[0]["description"]
+    assert imported[0]["source_url"].startswith("https://")
+    assert imported[0]["official"] is True
+    assert service.bootstrap()["engine_enabled"] is False
 
 
 def test_grow_start_snapshots_selected_nutrient_products(tmp_path):
@@ -367,3 +391,22 @@ def test_http_api_saves_setup_modules(standalone_http):
     bootstrap = json.loads(body)
     assert bootstrap["profiles"]["veg"]["planned_days"] == 31
     assert bootstrap["hardware"]["poll_interval"] == 60
+
+
+def test_http_api_adds_an_official_nutrient_catalog_product(standalone_http):
+    _, _, body = _request(
+        standalone_http, "GET", "/api/v1/bootstrap", token="test-secret"
+    )
+    bootstrap = json.loads(body)
+    product_id = bootstrap["nutrient_catalog"]["product_order"][0]
+
+    status, _, body = _request(
+        standalone_http,
+        "POST",
+        "/api/v1/nutrients/catalog/add",
+        token="test-secret",
+        payload={"catalog_id": product_id},
+    )
+
+    assert status == 200, body
+    assert json.loads(body)["result"]["created"] is True
