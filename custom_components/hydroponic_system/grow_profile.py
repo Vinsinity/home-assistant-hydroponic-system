@@ -247,8 +247,10 @@ def assistant_context_summary(
     missing = []
     if not cultivation or not cultivation.get("active"):
         missing.append("Aktif yetiştirme")
-    elif not cultivation.get("plant_profile_snapshot"):
-        missing.append("Bitki türü profili")
+    elif not cultivation.get("plant_snapshot"):
+        missing.append("Bitki kaydı")
+    if cultivation and cultivation.get("active") and not cultivation.get("grow_profile_snapshot"):
+        missing.append("Yetiştirme profili")
     if not system_status["complete"]:
         missing.append("Yetiştirme alanı / medya / ışık bilgileri")
     if not sensors:
@@ -259,7 +261,8 @@ def assistant_context_summary(
         "ready": bool(
             cultivation
             and cultivation.get("active")
-            and cultivation.get("plant_profile_snapshot")
+            and cultivation.get("plant_snapshot")
+            and cultivation.get("grow_profile_snapshot")
             and system_status["complete"]
         ),
         "missing": missing,
@@ -298,9 +301,14 @@ def build_assistant_prompt(
             "start_date": _text(cultivation.get("start_date"), 10),
             "active_stage": active_stage,
             "stage_profile": active_profile or {},
-            "plant_profile": (
-                cultivation.get("plant_profile_snapshot", {})
-                if isinstance(cultivation.get("plant_profile_snapshot"), dict)
+            "plant": (
+                cultivation.get("plant_snapshot", {})
+                if isinstance(cultivation.get("plant_snapshot"), dict)
+                else {}
+            ),
+            "grow_profile": (
+                cultivation.get("grow_profile_snapshot", {})
+                if isinstance(cultivation.get("grow_profile_snapshot"), dict)
                 else {}
             ),
             "nutrient_program": (

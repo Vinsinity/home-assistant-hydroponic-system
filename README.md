@@ -24,6 +24,10 @@ The repository now includes a usable Home Assistant-independent product slice:
 - **Profiles** is a standalone CRUD library: users can create, copy, rename,
   edit, or delete any profile. A profile never owns a plant, cultivar, nutrient,
   pump, or dose, and a deleted starter profile stays deleted;
+- the persisted schemas enforce the same boundary: Plant Library records carry
+  no stage targets, Profiles carry no plant/product references, and Nutrients
+  carry no plant/profile references. Only a cultivation stores the three
+  separately selected immutable snapshots;
 - **Nutrients** includes a versioned built-in catalogue of 367 products across
   20 major manufacturers. It contains only **Brands & Products** and **My
   Products**; grow profiles never appear inside this workspace;

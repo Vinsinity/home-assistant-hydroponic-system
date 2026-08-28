@@ -220,7 +220,7 @@ function renderToday() {
     viewContent.innerHTML = `<section class="empty-grow">
       <div class="empty-copy">
         <h2>Yeni yetiştirme başlat</h2>
-        <p>Bitkini seç, başlangıç tarihini belirle. Aşama, besin, su ve bakım kayıtlarını tek günlükten takip et.</p>
+        <p>Bitkiyi, hedef profilini ve kullanacağın besinleri ayrı ayrı seç; tüm süreci tek günlükten takip et.</p>
         <button class="primary-button" data-start-grow>Yetiştirmeyi başlat</button>
       </div>
     </section>`;
@@ -241,9 +241,7 @@ function renderToday() {
   const events = recentEvents();
   const snapshot = grow.system_snapshot || state.system_profile || {};
   const lighting = snapshot.lighting || {};
-  const stageTarget = grow.grow_profile_snapshot?.stages?.[state.active_stage]
-    || grow.plant_profile_snapshot?.profile?.stages?.[state.active_stage]
-    || {};
+  const stageTarget = grow.grow_profile_snapshot?.stages?.[state.active_stage] || {};
   const context = [
     ["Yöntem", identity.growing_method || "—"],
     ["Medya", identity.growing_medium || "—"],
@@ -407,7 +405,7 @@ function renderPlants(panel) {
       <div data-plant-list>${plants.map((item) => `<button type="button" class="library-item ${item.id === plant.id ? "active" : ""}" data-plant-id="${html(item.id)}" data-search="${html(`${item.name} ${item.english_name} ${item.botanical_name}`.toLowerCase())}"><span><b>${html(item.name)}</b><small>${html(item.botanical_name || item.english_name)}</small></span><em>${html(item.cultivars?.length || item.cultivar_examples?.length || 0)}</em></button>`).join("")}</div>
     </aside>
     <form class="library-detail" data-plant-form>
-      <div class="record-heading"><div><span class="record-type">${plant.built_in ? "Bitki kaydı" : "Kendi bitkin"}</span><h3>${html(plant.name)}</h3><p>Tür, botanik kimlik, çeşit ve kaynak bilgileri. Yetiştirme hedefleri Profiller bölümünde tutulur.</p></div><button class="primary-button" type="submit">Bitkiyi kaydet</button></div>
+      <div class="record-heading"><div><span class="record-type">${plant.built_in ? "Bitki kaydı" : "Kendi bitkin"}</span><h3>${html(plant.name)}</h3><p>Yalnızca tür, botanik kimlik, çeşit ve kaynak bilgileri. Bu kayıt profil veya besin içermez.</p></div><button class="primary-button" type="submit">Bitkiyi kaydet</button></div>
       <section class="plant-identity-section"><header><h3>Bitki bilgileri</h3><p>Bu bilgiler bitkiyi ve çeşitlerini tanımlar; herhangi bir besin ürünü içermez.</p></header><div class="field-grid">
         ${field("plant","name","Görünen ad",plant.name)}${field("plant","english_name","İngilizce ad",plant.english_name)}${field("plant","botanical_name","Botanik ad",plant.botanical_name)}
         ${field("plant","category","Kategori",plant.category)}<label class="wide"><span>Not</span><textarea name="plant.notes">${html(plant.notes)}</textarea></label>
@@ -442,7 +440,7 @@ function renderProfiles(panel) {
       <div>${profiles.map((item) => `<button type="button" class="library-item ${item.id === profile.id ? "active" : ""}" data-profile-id="${html(item.id)}"><span><b>${html(item.name)}</b><small>${html(item.description || "Açıklama yok")}</small></span><em>${Object.values(item.stages || {}).filter((stage) => stage.enabled).length}</em></button>`).join("")}</div>
     </aside>
     <form class="library-detail" data-profile-form>
-      <div class="record-heading"><div><span class="record-type">${profile.starter ? "Başlangıçtan taşınan profil" : "Kullanıcı profili"}</span><h3>${html(profile.name)}</h3><p>Bu kayıt bağımsızdır; herhangi bir bitkiye veya besine kilitli değildir.</p></div><div class="record-actions"><button class="secondary-button compact" type="button" data-duplicate-profile>Kopyala</button><button class="danger-button" type="button" data-delete-profile>Sil</button><button class="primary-button" type="submit">Kaydet</button></div></div>
+      <div class="record-heading"><div><span class="record-type">${profile.starter ? "Hazır hedef örneği" : "Kullanıcı profili"}</span><h3>${html(profile.name)}</h3><p>Yalnızca aşama ve ortam hedefleri. Bu kayıt bitki veya besin içermez.</p></div><div class="record-actions"><button class="secondary-button compact" type="button" data-duplicate-profile>Kopyala</button><button class="danger-button" type="button" data-delete-profile>Sil</button><button class="primary-button" type="submit">Kaydet</button></div></div>
       <section class="profile-identity"><div class="field-grid simple-grid"><label><span>Profil adı</span><input name="profile.name" value="${html(profile.name)}" maxlength="96" required></label><label class="wide"><span>Açıklama</span><textarea name="profile.description" maxlength="1200">${html(profile.description)}</textarea></label></div></section>
       <section class="profile-boundary" aria-label="Profil kapsamı"><span><b>Bu profilde olanlar</b><small>Aşama süresi · ışık · sıcaklık · nem · VPD · CO₂ · pH · EC · su hedefleri</small></span><span><b>Bu profilde olmayanlar</b><small>Bitki türü · cultivar · besin markası · ürün · pompa · doz miktarı</small></span></section>
       <section class="target-ledger"><header><div><h3>Aşama hedefleri</h3><p>Yetiştirme başlatırken profil bağımsız seçilir ve değişmez kopyası alınır.</p></div></header>

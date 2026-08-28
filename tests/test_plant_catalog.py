@@ -166,7 +166,7 @@ def test_builtin_cultivar_can_be_disabled_without_being_deleted():
     assert migrated["built_in"] is True
 
 
-def test_cultivation_snapshot_keeps_only_selected_genetics_and_profile():
+def test_cultivation_plant_snapshot_keeps_identity_and_selected_genetics_only():
     plant = plant_catalog.DEFAULT_PLANTS["cannabis"]
     cultivar = next(
         item for item in plant["cultivars"]
@@ -177,11 +177,18 @@ def test_cultivation_snapshot_keeps_only_selected_genetics_and_profile():
         plant, cultivar, catalog_version="2026.08.26"
     )
 
-    assert snapshot["profile"] == plant["profile"]
+    assert "profile" not in snapshot
     assert snapshot["cultivars"] == [cultivar]
     assert snapshot["catalog_version"] == "2026.08.26"
     assert len(json.dumps(snapshot, ensure_ascii=False).encode()) < 16_384
     assert len(plant["cultivars"]) == 249
+
+
+def test_standalone_identity_catalog_contains_no_grow_targets():
+    catalog = plant_catalog.default_plant_identity_catalog()
+
+    assert catalog["identity_schema_version"] == 1
+    assert all("profile" not in record for record in catalog["records"].values())
 
 
 def test_profile_values_are_bounded_and_ranges_are_ordered():

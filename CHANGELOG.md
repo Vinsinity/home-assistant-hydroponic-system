@@ -18,6 +18,11 @@
   records. Profiles can be created, copied, renamed, edited, and deleted on
   their own; they own stage/environment targets but no plant or product IDs.
   Deleted starter profiles are not silently restored on restart.
+- Remove grow targets from standalone plant records and retire the old shared
+  `profiles` state. Migrate plant-named starter profile IDs to neutral reusable
+  IDs while preserving user edits and deletions. Existing cultivation records
+  are upgraded to separate immutable plant, grow-profile, and nutrient
+  snapshots without rewriting append-only journal events.
 - Add a versioned SQLite manufacturer nutrient catalogue with 367 products from
   20 major brands. The Nutrients workspace now supports brand/product search,
   product details with official source links, and idempotent one-click copying
@@ -59,7 +64,8 @@
 - Add standalone application services and API routes for starting/finishing a
   cultivation, stage transitions, custom plants, physical setup, and immutable
   journal events.
-- Snapshot the selected Plant Library profile, Cannabis genetics, method,
+- Snapshot the selected Plant Library identity, independent grow profile,
+  Cannabis genetics, method,
   growing medium, fixture context, and nutrient-program name at grow start.
 - Let grow start select a compatible manufacturer program instead of manually
   checking user-specific products, then snapshot complete product identities

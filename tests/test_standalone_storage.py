@@ -109,7 +109,6 @@ def test_sqlite_triggers_reject_direct_event_update_and_delete(tmp_path):
 def test_ha_export_import_merges_and_validates_checksum(tmp_path):
     source = GrowAsistStore(tmp_path / "source.db")
     source_state = _state_with_event()
-    source_state["profiles"] = {"bloom": {"name": "Çiçeklenme", "planned_days": 63}}
     source_state["hardware"] = {
         "i2c_bus": 1,
         "poll_interval": 45,
@@ -118,7 +117,7 @@ def test_ha_export_import_merges_and_validates_checksum(tmp_path):
         "dosing_fluids": [{"id": "ph_up", "name": "pH+"}, {"id": "ph_down", "name": "pH-"}],
     }
     saved_source = source.save_state(source_state)
-    saved_source["grow_profiles"]["records"]["tomato_starter"]["name"] = (
+    saved_source["grow_profiles"]["records"]["extended_fruiting"]["name"] = (
         "Taşınan bağımsız profil"
     )
     source.save_state(saved_source)
@@ -129,9 +128,9 @@ def test_ha_export_import_merges_and_validates_checksum(tmp_path):
 
     assert "pi_grow" in imported["cultivations"]["records"]
     assert any(event["id"] == "permanent_note" for event in imported["events"])
-    assert imported["profiles"]["bloom"]["planned_days"] == 63
+    assert "profiles" not in imported
     assert (
-        imported["grow_profiles"]["records"]["tomato_starter"]["name"]
+        imported["grow_profiles"]["records"]["extended_fruiting"]["name"]
         == "Taşınan bağımsız profil"
     )
     assert imported["hardware"]["poll_interval"] == 45
@@ -205,3 +204,35 @@ def test_catalog_upgrade_keeps_selected_products_and_immutable_journal(tmp_path)
     assert any(item["id"] == "my_base" for item in upgraded["hardware"]["dosing_fluids"])
     assert any(event["id"] == "permanent_note" for event in upgraded["events"])
     assert upgraded_store.health()["event_count"] == 3
+
+
+def test_state_upgrade_separates_plant_profile_and_nutrient_ledgers(tmp_path):
+    store = GrowAsistStore(tmp_path / "growasist.db")
+    state = store.load_state()
+    state["profiles"] = {"veg": {"ppm": 900, "nutrient_ids": ["base_a"]}}
+    state["grow_profiles"] = {
+        "schema_version": 1,
+        "order": ["tomato_starter"],
+        "records": {
+            "tomato_starter": {
+                **deepcopy(state["grow_profiles"]["records"]["extended_fruiting"]),
+                "id": "tomato_starter",
+                "name": "Domates · Başlangıç",
+            }
+        },
+    }
+    legacy_plant = deepcopy(state["plant_catalog"]["records"]["tomato"])
+    legacy_plant["profile"] = {
+        "stages": {"veg": {"planned_days": 99}},
+        "references": ["https://example.test/legacy"],
+    }
+    state["plant_catalog"]["records"]["tomato"] = legacy_plant
+
+    upgraded = store.save_state(state)
+
+    assert "profiles" not in upgraded
+    assert "profile" not in upgraded["plant_catalog"]["records"]["tomato"]
+    assert "tomato_starter" not in upgraded["grow_profiles"]["records"]
+    target = upgraded["grow_profiles"]["records"]["extended_fruiting"]
+    assert "plant_id" not in target
+    assert all("nutrient_ids" not in stage for stage in target["stages"].values())

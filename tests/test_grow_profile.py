@@ -93,9 +93,13 @@ def test_assistant_prompt_marks_user_data_and_forbids_actions():
             "name": "Grow 1",
             "start_date": "2026-08-26",
             "identity": {"plant_species": "Tomato"},
-            "plant_profile_snapshot": {
+            "plant_snapshot": {
                 "id": "tomato",
-                "profile": {"kind": "editable_example"},
+            },
+            "grow_profile_snapshot": {
+                "id": "warm_rdwc",
+                "name": "Warm RDWC",
+                "stages": {"germination": {"ph_min": 5.8, "ph_max": 6.2}},
             },
             "nutrient_program_snapshot": {
                 "name": "Tomato base",

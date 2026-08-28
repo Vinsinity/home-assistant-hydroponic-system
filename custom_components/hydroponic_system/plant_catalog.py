@@ -17,6 +17,7 @@ import unicodedata
 
 
 PLANT_CATALOG_SCHEMA_VERSION = 5
+PLANT_IDENTITY_SCHEMA_VERSION = 1
 STAGE_ORDER = ("germination", "early_veg", "veg", "bloom", "darkness", "harvest")
 PROFILE_KIND = "editable_example"
 
@@ -677,7 +678,44 @@ def cultivation_plant_snapshot(
     selected = deepcopy(cultivar) if isinstance(cultivar, dict) else None
     snapshot["cultivars"] = [selected] if selected else []
     snapshot["catalog_version"] = _text(catalog_version, 32)
+    snapshot.pop("profile", None)
     return snapshot
+
+
+def normalize_plant_identity_record(
+    value: Any,
+    *,
+    plant_id: str | None = None,
+    fallback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Normalize a plant identity without carrying grow targets inside it."""
+    value = value if isinstance(value, dict) else {}
+    resolved_id = _text(
+        plant_id or value.get("id") or (fallback or {}).get("id"), 64
+    ).lower()
+    base = deepcopy(DEFAULT_PLANTS.get(resolved_id, GENERIC_PLANT))
+    if isinstance(fallback, dict):
+        for key, item in fallback.items():
+            if key != "profile":
+                base[key] = deepcopy(item)
+    normalized = normalize_plant_record(value, plant_id=resolved_id, fallback=base)
+    normalized.pop("profile", None)
+    return normalized
+
+
+def normalize_plant_identity_catalog(value: Any) -> dict[str, Any]:
+    """Return the standalone plant catalogue with identity/genetics data only."""
+    catalog = normalize_plant_catalog(value)
+    catalog["identity_schema_version"] = PLANT_IDENTITY_SCHEMA_VERSION
+    for record in catalog.get("records", {}).values():
+        if isinstance(record, dict):
+            record.pop("profile", None)
+    return catalog
+
+
+def default_plant_identity_catalog() -> dict[str, Any]:
+    """Return a copy-safe standalone plant identity catalogue."""
+    return normalize_plant_identity_catalog(default_plant_catalog())
 
 
 def plant_plan(record: Any) -> list[dict[str, Any]]:

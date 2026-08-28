@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date, timedelta
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
@@ -21,7 +22,7 @@ def _start_payload(**overrides):
         "name": "Standalone grow",
         "start_date": date.today().isoformat(),
         "plant_id": "tomato",
-        "grow_profile_id": "tomato_starter",
+        "grow_profile_id": "extended_fruiting",
         "plant_count": 2,
         "growing_method": "RDWC",
         "growing_medium": "Expanded clay",
@@ -83,7 +84,7 @@ def test_custom_plant_is_persisted_in_the_library(tmp_path):
     )
     restarted = service.bootstrap()
 
-    custom_id = grow["identity"]["plant_profile_id"]
+    custom_id = grow["identity"]["plant_id"]
     assert custom_id.startswith("custom_")
     assert restarted["plant_catalog"]["records"][custom_id]["name"] == "Pak choi"
 
@@ -110,7 +111,7 @@ def test_later_setup_edits_cannot_rewrite_a_grow_snapshot(tmp_path):
 def test_grow_profiles_are_independent_crud_records_and_deleted_profiles_stay_deleted(tmp_path):
     database_path = tmp_path / "growasist.db"
     service = GrowAsistService(GrowAsistStore(database_path))
-    tomato = service.bootstrap()["grow_profiles"]["records"]["tomato_starter"]
+    tomato = service.bootstrap()["grow_profiles"]["records"]["extended_fruiting"]
     values = json.loads(json.dumps(tomato))
     values.update({"name": "Benim RDWC profilim", "description": "Bitkiden bağımsız"})
     values["stages"]["veg"]["planned_days"] = 41
@@ -123,13 +124,13 @@ def test_grow_profiles_are_independent_crud_records_and_deleted_profiles_stay_de
     assert "plant_id" not in created
     assert all("nutrient_ids" not in stage for stage in created["stages"].values())
 
-    removed = service.remove_grow_profile({"profile_id": "tomato_starter"})
-    assert removed["id"] == "tomato_starter"
+    removed = service.remove_grow_profile({"profile_id": "extended_fruiting"})
+    assert removed["id"] == "extended_fruiting"
 
     restarted_service = GrowAsistService(GrowAsistStore(database_path))
     restarted = restarted_service.bootstrap()["grow_profiles"]
     assert "my_rdwc" in restarted["records"]
-    assert "tomato_starter" not in restarted["records"]
+    assert "extended_fruiting" not in restarted["records"]
 
 
 def test_grow_start_selects_plant_and_profile_separately_and_freezes_both(tmp_path):
@@ -138,27 +139,27 @@ def test_grow_start_selects_plant_and_profile_separately_and_freezes_both(tmp_pa
         _start_payload(
             cultivation_id="independent_profile_grow",
             plant_id="tomato",
-            grow_profile_id="lettuce_starter",
+            grow_profile_id="short_leaf_cycle",
         )
     )
 
     assert created["identity"]["plant_id"] == "tomato"
-    assert created["identity"]["grow_profile_id"] == "lettuce_starter"
-    assert created["plant_profile_snapshot"]["id"] == "tomato"
-    assert "profile" not in created["plant_profile_snapshot"]
-    assert created["grow_profile_snapshot"]["id"] == "lettuce_starter"
+    assert created["identity"]["grow_profile_id"] == "short_leaf_cycle"
+    assert created["plant_snapshot"]["id"] == "tomato"
+    assert "profile" not in created["plant_snapshot"]
+    assert created["grow_profile_snapshot"]["id"] == "short_leaf_cycle"
     frozen_days = created["grow_profile_snapshot"]["stages"]["veg"]["planned_days"]
 
-    profile = service.bootstrap()["grow_profiles"]["records"]["lettuce_starter"]
+    profile = service.bootstrap()["grow_profiles"]["records"]["short_leaf_cycle"]
     profile["stages"]["veg"]["planned_days"] = frozen_days + 10
     service.update_grow_profile(
-        {"profile_id": "lettuce_starter", "values": profile}
+        {"profile_id": "short_leaf_cycle", "values": profile}
     )
-    service.remove_grow_profile({"profile_id": "lettuce_starter"})
+    service.remove_grow_profile({"profile_id": "short_leaf_cycle"})
 
     active = service.bootstrap()["active_cultivation"]
     assert active["grow_profile_snapshot"]["stages"]["veg"]["planned_days"] == frozen_days
-    assert active["identity"]["grow_profile_id"] == "lettuce_starter"
+    assert active["identity"]["grow_profile_id"] == "short_leaf_cycle"
 
 
 def test_light_setup_accepts_only_an_enrolled_light_device(tmp_path):
@@ -182,15 +183,17 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
 
     bootstrap = service.bootstrap()
-    assert set(("profiles", "plant_catalog", "grow_profiles", "nutrient_catalog", "hardware", "assistant_settings")) <= set(bootstrap)
+    assert set(("plant_catalog", "grow_profiles", "nutrient_catalog", "hardware", "assistant_settings")) <= set(bootstrap)
+    assert "profiles" not in bootstrap
     assert len(bootstrap["nutrient_catalog"]["products"]) >= 367
     assert bootstrap["plant_catalog"]["records"]["cannabis"]["cultivars"]
 
-    profile = service.update_profile(
-        {
-            "stage": "bloom",
-            "values": {"planned_days": 63, "photoperiod": 12, "ppm": 920},
-        }
+    profile_values = deepcopy(
+        bootstrap["grow_profiles"]["records"]["extended_fruiting"]
+    )
+    profile_values["stages"]["bloom"]["planned_days"] = 63
+    profile = service.update_grow_profile(
+        {"profile_id": "extended_fruiting", "values": profile_values}
     )
     plant = service.update_plant(
         {
@@ -226,11 +229,11 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
     )
 
     restarted = GrowAsistService(GrowAsistStore(service.store.database_path)).bootstrap()
-    assert profile["planned_days"] == 63
+    assert profile["stages"]["bloom"]["planned_days"] == 63
     assert plant["notes"] == "Yerel kullanıcı notu"
     assert hardware["poll_interval"] == 45
     assert hardware["device_assignments"][1]["channels"][0]["calibration"]["flow_ml_s"] == 1.2
-    assert restarted["profiles"]["bloom"]["ppm"] == 920
+    assert restarted["grow_profiles"]["records"]["extended_fruiting"]["stages"]["bloom"]["planned_days"] == 63
     assert restarted["hardware"]["dosing_fluids"][2]["id"] == "bloom_a"
     assert restarted["engine_enabled"] is False
 
@@ -437,7 +440,7 @@ def test_grow_start_snapshots_selected_nutrient_products(tmp_path):
     assert service.bootstrap()["engine_enabled"] is False
 
 
-def test_plant_profiles_drop_all_nutrient_product_assignments(tmp_path):
+def test_plant_profile_and_nutrient_ledgers_have_no_cross_links(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
     service.update_hardware({
         "dosing_fluids": [
@@ -448,22 +451,20 @@ def test_plant_profiles_drop_all_nutrient_product_assignments(tmp_path):
         ]
     })
     bootstrap = service.bootstrap()
-    tomato = bootstrap["plant_catalog"]["records"]["tomato"]
-    cannabis = bootstrap["plant_catalog"]["records"]["cannabis"]
-    tomato["profile"]["stages"]["veg"]["nutrient_ids"] = ["tomato_a"]
-    cannabis["profile"]["stages"]["veg"]["nutrient_ids"] = ["cannabis_a"]
+    plants = bootstrap["plant_catalog"]["records"]
+    profiles = bootstrap["grow_profiles"]["records"]
+    nutrients = bootstrap["nutrient_catalog"]
 
-    service.update_plant({"plant_id": "tomato", "values": tomato})
-    service.update_plant({"plant_id": "cannabis", "values": cannabis})
-    saved = service.bootstrap()["plant_catalog"]["records"]
-
-    assert "nutrient_ids" not in saved["tomato"]["profile"]["stages"]["veg"]
-    assert "nutrient_ids" not in saved["cannabis"]["profile"]["stages"]["veg"]
+    assert all("profile" not in plant for plant in plants.values())
+    assert all("plant_id" not in profile for profile in profiles.values())
+    assert all("nutrient_ids" not in profile for profile in profiles.values())
     assert all(
         "nutrient_ids" not in stage
-        for plant in saved.values()
-        for stage in plant["profile"]["stages"].values()
+        for profile in profiles.values()
+        for stage in profile["stages"].values()
     )
+    assert all("plant_id" not in product for product in nutrients["products"].values())
+    assert all("grow_profile_id" not in program for program in nutrients["programs"].values())
 
 
 def test_cannabis_requires_growth_type_when_no_catalog_cultivar_is_selected(tmp_path):
@@ -474,7 +475,7 @@ def test_cannabis_requires_growth_type_when_no_catalog_cultivar_is_selected(tmp_
             _start_payload(
                 cultivation_id="cannabis_grow",
                 plant_id="cannabis",
-                grow_profile_id="cannabis_starter",
+                grow_profile_id="photoperiod_18_12",
             )
         )
 
@@ -581,8 +582,14 @@ def test_http_api_starts_grow_and_appends_immutable_event(standalone_http):
 
 
 def test_http_api_saves_setup_modules(standalone_http):
+    _, _, body = _request(
+        standalone_http, "GET", "/api/v1/bootstrap", token="test-secret"
+    )
+    bootstrap = json.loads(body)
+    values = bootstrap["grow_profiles"]["records"]["extended_fruiting"]
+    values["stages"]["veg"]["planned_days"] = 31
     for path, payload in (
-        ("/api/v1/profiles", {"stage": "veg", "values": {"planned_days": 31}}),
+        ("/api/v1/grow-profiles", {"profile_id": "extended_fruiting", "values": values}),
         ("/api/v1/hardware", {"poll_interval": 60}),
     ):
         status, _, body = _request(
@@ -601,7 +608,7 @@ def test_http_api_saves_setup_modules(standalone_http):
         token="test-secret",
     )
     bootstrap = json.loads(body)
-    assert bootstrap["profiles"]["veg"]["planned_days"] == 31
+    assert bootstrap["grow_profiles"]["records"]["extended_fruiting"]["stages"]["veg"]["planned_days"] == 31
     assert bootstrap["hardware"]["poll_interval"] == 60
 
 
@@ -610,7 +617,7 @@ def test_http_api_creates_and_removes_an_independent_grow_profile(standalone_htt
         standalone_http, "GET", "/api/v1/bootstrap", token="test-secret"
     )
     bootstrap = json.loads(body)
-    values = bootstrap["grow_profiles"]["records"]["lettuce_starter"]
+    values = bootstrap["grow_profiles"]["records"]["short_leaf_cycle"]
     values["name"] = "API profili"
 
     status, _, body = _request(

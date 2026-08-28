@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "growasist"
-version = "0.33.0.dev6"
+version = "0.33.0.dev7"
 description = "Standalone Raspberry Pi grow tracking and hardware gateway core"
 readme = "README.md"
 requires-python = ">=3.11"

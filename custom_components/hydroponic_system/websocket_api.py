@@ -157,7 +157,7 @@ async def websocket_save_profile(hass, connection, msg) -> None:
         connection.send_error(msg["id"], "invalid_stage", str(err))
         return
     cultivation = store.active_cultivation
-    if cultivation is not None and not cultivation.get("plant_profile_snapshot"):
+    if cultivation is not None and not cultivation.get("grow_profile_snapshot"):
         for block in cultivation.get("plan", []):
             if block.get("stage") == msg["stage"]:
                 block["planned_days"] = max(1, min(365, int(profile["planned_days"])))
@@ -282,17 +282,17 @@ async def websocket_generate_assistant_report(hass, connection, msg) -> None:
     sensor_summaries = normalize_sensor_summaries(msg.get("sensor_summaries"))
     cultivation_events = events_for_cultivation(store.data, cultivation["id"])
     stage = store.data.get("active_stage")
-    plant_snapshot = cultivation.get("plant_profile_snapshot", {})
-    plant_stage_profile = (
-        plant_snapshot.get("profile", {}).get("stages", {}).get(stage)
-        if isinstance(plant_snapshot, dict) and stage
+    grow_profile_snapshot = cultivation.get("grow_profile_snapshot", {})
+    active_grow_target = (
+        grow_profile_snapshot.get("stages", {}).get(stage)
+        if isinstance(grow_profile_snapshot, dict) and stage
         else None
     )
     prompt = build_assistant_prompt(
         cultivation=cultivation,
         active_stage=stage,
         active_profile=(
-            plant_stage_profile
+            active_grow_target
             or (store.data.get("profiles", {}).get(stage) if stage else None)
         ),
         system_profile=store.data.get("system_profile"),
@@ -605,7 +605,7 @@ async def websocket_start_cultivation(hass, connection, msg) -> None:
         "products": nutrient_products,
         "source": "grow_start",
     }
-    plant_profile_snapshot = cultivation_plant_snapshot(
+    plant_snapshot = cultivation_plant_snapshot(
         selected_plant,
         cultivar,
         catalog_version=str(catalog.get("catalog_version") or ""),
@@ -620,7 +620,7 @@ async def websocket_start_cultivation(hass, connection, msg) -> None:
             system_snapshot=normalize_system_profile(
                 store.data.get("system_profile")
             ),
-            plant_profile_snapshot=plant_profile_snapshot,
+            plant_snapshot=plant_snapshot,
             genetics_snapshot=genetics_snapshot,
             nutrient_program_snapshot=nutrient_program_snapshot,
             initial_stage=msg.get("initial_stage") or None,

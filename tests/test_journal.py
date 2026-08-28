@@ -45,7 +45,7 @@ def _record(record_id: str, start_date: str):
             "cabin": {"name": "Cabinet A"},
             "lighting": {"model": "Fixture 1"},
         },
-        plant_profile_snapshot={
+        plant_snapshot={
             "id": "tomato",
             "name": "Tomato",
         },
@@ -107,8 +107,8 @@ def test_cultivation_keeps_its_system_snapshot_in_record_and_start_event():
     assert record["system_snapshot"]["cabin"]["name"] == "Cabinet A"
     started = next(event for event in data["events"] if event["type"] == "cultivation_started")
     assert started["data"]["system_snapshot"] == record["system_snapshot"]
-    assert record["plant_profile_snapshot"]["id"] == "tomato"
-    assert started["data"]["plant_profile_snapshot"] == record["plant_profile_snapshot"]
+    assert record["plant_snapshot"]["id"] == "tomato"
+    assert started["data"]["plant_snapshot"] == record["plant_snapshot"]
     assert record["grow_profile_snapshot"]["id"] == "summer_rdwc"
     assert started["data"]["grow_profile_snapshot"] == record["grow_profile_snapshot"]
     assert record["genetics_snapshot"]["breeder"]["name"] == "Example Breeder"
@@ -117,6 +117,48 @@ def test_cultivation_keeps_its_system_snapshot_in_record_and_start_event():
     assert started["data"]["nutrient_program_snapshot"] == record["nutrient_program_snapshot"]
     assert record["identity"]["cultivar_id"] == "example_marmande"
     assert record["identity"]["growing_medium"] == "Expanded clay"
+
+
+def test_legacy_embedded_plant_profile_is_split_into_two_snapshots():
+    legacy = {
+        "schema_version": 6,
+        "cultivations": {
+            "active_id": "legacy",
+            "order": ["legacy"],
+            "records": {
+                "legacy": {
+                    "id": "legacy",
+                    "name": "Legacy",
+                    "active": True,
+                    "start_date": "2026-08-01",
+                    "identity": {"plant_profile_id": "tomato", "plant_species": "Tomato"},
+                    "plan": [{"stage": "germination", "planned_days": 6}],
+                    "transitions": [{"stage": "germination", "date": "2026-08-01"}],
+                    "plant_profile_snapshot": {
+                        "id": "tomato",
+                        "name": "Tomato",
+                        "profile": {
+                            "kind": "editable_example",
+                            "stages": {"germination": {"planned_days": 6}},
+                            "references": ["https://example.test/reference"],
+                        },
+                    },
+                }
+            },
+        },
+        "events": [],
+    }
+
+    migrated, changed = journal.migrate_journal(legacy)
+    record = migrated["cultivations"]["records"]["legacy"]
+
+    assert changed is True
+    assert record["identity"]["plant_id"] == "tomato"
+    assert "plant_profile_id" not in record["identity"]
+    assert record["plant_snapshot"]["id"] == "tomato"
+    assert "profile" not in record["plant_snapshot"]
+    assert record["grow_profile_snapshot"]["stages"]["germination"]["planned_days"] == 6
+    assert "plant_profile_snapshot" not in record
 
 
 def test_selected_enabled_plant_stage_becomes_initial_stage():

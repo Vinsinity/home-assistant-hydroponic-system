@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 
-JOURNAL_SCHEMA_VERSION = 6
+JOURNAL_SCHEMA_VERSION = 7
 
 EVENT_TYPES = frozenset(
     {
@@ -61,7 +61,6 @@ AMOUNT_EVENT_UNITS = {
 
 IDENTITY_DEFAULTS: dict[str, Any] = {
     "plant_id": "",
-    "plant_profile_id": "",
     "grow_profile_id": "",
     "grow_profile_name": "",
     "plant_species": "",
@@ -101,7 +100,7 @@ def empty_cultivation_view() -> dict[str, Any]:
         "name": "",
         "identity": deepcopy(IDENTITY_DEFAULTS),
         "system_snapshot": {},
-        "plant_profile_snapshot": {},
+        "plant_snapshot": {},
         "grow_profile_snapshot": {},
         "genetics_snapshot": {},
         "nutrient_program_snapshot": {},
@@ -117,9 +116,9 @@ def normalize_identity(value: Any) -> dict[str, Any]:
     """Validate and bound the identity fields stored with one cultivation."""
     value = value if isinstance(value, dict) else {}
     result = deepcopy(IDENTITY_DEFAULTS)
+    legacy_plant_id = str(value.get("plant_profile_id") or "")[:64]
     for key, maximum in (
         ("plant_id", 64),
-        ("plant_profile_id", 64),
         ("grow_profile_id", 64),
         ("grow_profile_name", 96),
         ("plant_species", 96),
@@ -137,6 +136,8 @@ def normalize_identity(value: Any) -> dict[str, Any]:
         ("notes", 4000),
     ):
         result[key] = str(value.get(key) or result[key])[:maximum]
+    if not result["plant_id"]:
+        result["plant_id"] = legacy_plant_id
     try:
         plant_count = int(value.get("plant_count", 1))
     except (TypeError, ValueError):
@@ -264,16 +265,32 @@ def _normalize_record(record: dict[str, Any], record_id: str) -> dict[str, Any]:
         if isinstance(result.get("system_snapshot"), dict)
         else {}
     )
-    result["plant_profile_snapshot"] = _bounded_json(
-        result.get("plant_profile_snapshot")
-        if isinstance(result.get("plant_profile_snapshot"), dict)
-        else {},
-        maximum_bytes=65_536,
+    raw_plant_snapshot = result.get("plant_snapshot")
+    if not isinstance(raw_plant_snapshot, dict):
+        raw_plant_snapshot = result.get("plant_profile_snapshot")
+    raw_plant_snapshot = (
+        deepcopy(raw_plant_snapshot) if isinstance(raw_plant_snapshot, dict) else {}
     )
-    result["grow_profile_snapshot"] = _bounded_json(
+    embedded_profile = raw_plant_snapshot.pop("profile", None)
+    result["plant_snapshot"] = _bounded_json(
+        raw_plant_snapshot, maximum_bytes=65_536
+    )
+    result.pop("plant_profile_snapshot", None)
+    raw_grow_profile = (
         result.get("grow_profile_snapshot")
         if isinstance(result.get("grow_profile_snapshot"), dict)
-        else {},
+        else {}
+    )
+    if not raw_grow_profile and isinstance(embedded_profile, dict):
+        raw_grow_profile = {
+            "id": f"migrated_{str(raw_plant_snapshot.get('id') or 'profile')[:40]}",
+            "name": "Geçmişten ayrılan yetiştirme profili",
+            "description": "Eski bitki kaydından ayrılarak geçmişe taşındı.",
+            "stages": deepcopy(embedded_profile.get("stages", {})),
+            "references": deepcopy(embedded_profile.get("references", [])),
+        }
+    result["grow_profile_snapshot"] = _bounded_json(
+        raw_grow_profile,
         maximum_bytes=65_536,
     )
     result["genetics_snapshot"] = _bounded_json(
@@ -302,7 +319,7 @@ def new_cultivation(
     identity: dict[str, Any],
     plan: list[dict[str, Any]],
     system_snapshot: dict[str, Any] | None = None,
-    plant_profile_snapshot: dict[str, Any] | None = None,
+    plant_snapshot: dict[str, Any] | None = None,
     grow_profile_snapshot: dict[str, Any] | None = None,
     genetics_snapshot: dict[str, Any] | None = None,
     nutrient_program_snapshot: dict[str, Any] | None = None,
@@ -326,8 +343,8 @@ def new_cultivation(
         "name": str(name or f"Yetiştirme · {start_date}")[:80],
         "identity": normalize_identity(identity),
         "system_snapshot": _bounded_json(system_snapshot or {}),
-        "plant_profile_snapshot": _bounded_json(
-            plant_profile_snapshot or {}, maximum_bytes=65_536
+        "plant_snapshot": _bounded_json(
+            plant_snapshot or {}, maximum_bytes=65_536
         ),
         "grow_profile_snapshot": _bounded_json(
             grow_profile_snapshot or {}, maximum_bytes=65_536
@@ -393,7 +410,7 @@ def start_cultivation(
             data={
                 "identity": record["identity"],
                 "system_snapshot": record.get("system_snapshot", {}),
-                "plant_profile_snapshot": record.get("plant_profile_snapshot", {}),
+                "plant_snapshot": record.get("plant_snapshot", {}),
                 "grow_profile_snapshot": record.get("grow_profile_snapshot", {}),
                 "genetics_snapshot": record.get("genetics_snapshot", {}),
                 "nutrient_program_snapshot": record.get("nutrient_program_snapshot", {}),
