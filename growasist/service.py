@@ -90,6 +90,21 @@ def _same_network_device(left: dict[str, Any], right: dict[str, Any]) -> bool:
     return bool(left.get("host") and left.get("host") == right.get("host"))
 
 
+def _normalize_network_record(item: dict[str, Any]) -> None:
+    """Backfill discovery v3 fields while retaining historical sightings."""
+    vendor = str(item.get("vendor") or "Unknown")
+    known_iot = vendor in {"Shelly", "Tuya", "TP-Link / Tapo", "Dreo", "Matter"}
+    item.setdefault("manufacturer", "")
+    item.setdefault("hostname", "")
+    item.setdefault("ports", [item["port"]] if item.get("port") else [])
+    item.setdefault("discovery_methods", [item.get("source") or item.get("protocol") or "legacy_scan"])
+    item.setdefault("identity_confidence", 75 if item.get("supported") else 60 if known_iot else 45 if vendor != "Unknown" else 20)
+    item.setdefault("category", "grow_iot" if known_iot else "other" if vendor != "Unknown" else "unknown")
+    item.setdefault("evidence", ["Önceki keşif kaydı"])
+    item.setdefault("adapter_available", False)
+    item.setdefault("mac_local", False)
+
+
 def _bounded_number(value: Any, default: Any, low: float, high: float, integer: bool = False) -> int | float:
     try:
         number = float(value)
@@ -1064,11 +1079,17 @@ class GrowAsistService:
                 seen_ids.add(candidate_id)
                 candidates[candidate_id] = {**deepcopy(candidate), "online": True}
             for candidate_id, candidate in candidates.items():
+                _normalize_network_record(candidate)
                 if candidate_id not in seen_ids:
                     candidate["online"] = False
             for device_id, device in devices.items():
+                _normalize_network_record(device)
                 if device_id not in seen_ids:
                     device["online"] = False
+            for candidate_id, candidate in list(candidates.items()):
+                compact_mac = "".join(character for character in str(candidate.get("mac") or "") if character.isalnum()).upper()
+                if compact_mac in {"000000000000", "FFFFFFFFFFFF"}:
+                    candidates.pop(candidate_id, None)
             registry["last_scan"] = {
                 key: deepcopy(value) for key, value in result.items() if key != "candidates"
             }

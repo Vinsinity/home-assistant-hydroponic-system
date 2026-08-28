@@ -32,7 +32,7 @@ _SSDP_ADDRESS = ("239.255.255.250", 1900)
 _TP_LINK_LEGACY_PORT = 9999
 _TP_LINK_DISCOVERY_PORTS = (20002, 20004)
 _TUYA_LISTEN_PORTS = (6666, 6667)
-_TUYA_TCP_PORTS = (6667, 6668, 6669, 7000)
+_TUYA_TCP_PORTS = (6667, 6668, 6669)
 _SCAN_PORTS = (80, 443, 1883, 6667, 6668, 6669, 7000, 8080, 8883, 9999)
 _MAX_NETWORK_HOSTS = 1024
 _MDNS_SERVICE_TYPES = (
@@ -84,7 +84,7 @@ def _candidate_id(vendor: str, host: str, mac: str = "") -> str:
 
 def _clean_mac(value: Any) -> str:
     compact = "".join(character for character in str(value or "") if character.isalnum()).upper()
-    if len(compact) != 12:
+    if len(compact) != 12 or compact in {"000000000000", "FFFFFFFFFFFF"}:
         return ""
     return ":".join(compact[index:index + 2] for index in range(0, 12, 2))
 
@@ -530,11 +530,6 @@ class NetworkDiscovery:
             ])
             merged["supported"] = bool(existing.get("supported") or candidate.get("supported"))
             merged["requires_auth"] = bool(existing.get("requires_auth") or candidate.get("requires_auth"))
-            merged["category"] = _device_category(
-                str(merged.get("vendor") or "Unknown"),
-                str(merged.get("name") or ""),
-                str(merged.get("model") or ""),
-            )
             target.pop(existing_id, None)
             target[str(merged["id"])] = merged
             return

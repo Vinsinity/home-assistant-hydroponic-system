@@ -72,6 +72,10 @@ def test_vendor_discovery_payloads_are_reduced_to_safe_candidates():
     mesh_router = _tplink_candidate("10.1.1.52", {"result": {"device_model": "M4R"}}, port=20002)
     assert mesh_router["supported"] is False
     assert mesh_router["suggested_role"] == "unassigned"
+    assert mesh_router["category"] == "infrastructure"
+
+    invalid_neighbor = _candidate("10.1.1.254", mac="00:00:00:00:00:00")
+    assert invalid_neighbor["mac"] == ""
 
 
 def test_shelly_capability_inference_keeps_dimmer_and_sensor_roles_separate():
