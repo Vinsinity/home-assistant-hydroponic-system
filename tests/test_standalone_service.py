@@ -315,29 +315,33 @@ def test_catalog_program_adds_the_set_atomically_and_deduplicates(tmp_path):
     assert set(program["core_product_ids"]) <= local_catalog_ids
 
 
-def test_grow_start_imports_and_snapshots_a_catalog_program(tmp_path):
+def test_grow_start_snapshots_a_catalog_set_without_changing_inventory(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
     catalog = service.bootstrap()["nutrient_catalog"]
+    owned_before = service.bootstrap()["hardware"]["dosing_fluids"]
     program = next(
         item for item in catalog["programs"].values()
         if item["brand_id"] == "canna" and item["line"] == "CANNA AQUA"
     )
 
     cultivation = service.start_cultivation(_start_payload(
-        nutrient_program_id=program["id"],
-        nutrient_program_scope="core",
+        nutrient_set_id=program["id"],
+        nutrient_set_scope="core",
         nutrient_program="",
     ))
     snapshot = cultivation["nutrient_program_snapshot"]
 
     assert cultivation["identity"]["nutrient_program"] == program["name"]
+    assert snapshot["set_id"] == program["id"]
     assert snapshot["program_id"] == program["id"]
     assert snapshot["brand"] == "CANNA"
     assert snapshot["catalog_product_ids"] == program["core_product_ids"]
     assert len(snapshot["products"]) == len(program["core_product_ids"])
     assert snapshot["dose_plan_included"] is False
     assert snapshot["catalog_version"] == catalog["catalog_version"]
-    assert snapshot["stages"]["veg"]["nutrient_ids"]
+    assert snapshot["stages"]["veg"]["catalog_product_ids"]
+    assert snapshot["stages"]["veg"]["nutrient_ids"] == []
+    assert service.bootstrap()["hardware"]["dosing_fluids"] == owned_before
 
 
 def test_grow_start_rejects_a_program_for_the_wrong_environment(tmp_path):
@@ -378,7 +382,7 @@ def test_grow_start_snapshots_selected_nutrient_products(tmp_path):
     assert service.bootstrap()["engine_enabled"] is False
 
 
-def test_plant_stages_keep_separate_nutrient_products(tmp_path):
+def test_plant_profiles_drop_all_nutrient_product_assignments(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
     service.update_hardware({
         "dosing_fluids": [
@@ -398,13 +402,13 @@ def test_plant_stages_keep_separate_nutrient_products(tmp_path):
     service.update_plant({"plant_id": "cannabis", "values": cannabis})
     saved = service.bootstrap()["plant_catalog"]["records"]
 
-    assert saved["tomato"]["profile"]["stages"]["veg"]["nutrient_ids"] == ["tomato_a"]
-    assert saved["cannabis"]["profile"]["stages"]["veg"]["nutrient_ids"] == ["cannabis_a"]
-    assert "nutrient_ids" not in service.bootstrap()["profiles"]["veg"]
-
-    tomato["profile"]["stages"]["veg"]["nutrient_ids"] = ["not_in_catalog"]
-    with pytest.raises(ValueError, match="katalog dışı"):
-        service.update_plant({"plant_id": "tomato", "values": tomato})
+    assert "nutrient_ids" not in saved["tomato"]["profile"]["stages"]["veg"]
+    assert "nutrient_ids" not in saved["cannabis"]["profile"]["stages"]["veg"]
+    assert all(
+        "nutrient_ids" not in stage
+        for plant in saved.values()
+        for stage in plant["profile"]["stages"].values()
+    )
 
 
 def test_cannabis_requires_growth_type_when_no_catalog_cultivar_is_selected(tmp_path):

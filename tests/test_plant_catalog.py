@@ -20,7 +20,7 @@ SPEC.loader.exec_module(plant_catalog)
 def test_default_catalog_contains_global_core_crops_and_cannabis():
     catalog = plant_catalog.default_plant_catalog()
 
-    assert catalog["schema_version"] == 4
+    assert catalog["schema_version"] == 5
     assert catalog["catalog_version"] == "2026.08.26"
     assert set(catalog["records"]) >= {
         "tomato", "lettuce", "cannabis", "basil", "strawberry", "pepper", "cucumber"
@@ -78,7 +78,7 @@ def test_catalog_migration_preserves_edits_and_adds_missing_defaults():
     assert catalog["records"]["my_plant"]["built_in"] is False
     assert "lettuce" in catalog["records"]
     assert catalog["order"][:2] == ["my_plant", "tomato"]
-    assert catalog["schema_version"] == 4
+    assert catalog["schema_version"] == 5
     assert catalog["catalog_version"] == "2026.08.26"
     assert catalog["breeders"]["royal_queen_seeds"]["name"] == "Royal Queen Seeds"
     assert len(catalog["records"]["cannabis"]["cultivars"]) == 249
@@ -200,7 +200,7 @@ def test_profile_values_are_bounded_and_ranges_are_ordered():
     assert stage["ec_max"] == 10
 
 
-def test_nutrient_products_are_stored_per_plant_stage():
+def test_legacy_nutrient_products_are_removed_from_plant_profiles():
     tomato = deepcopy(plant_catalog.DEFAULT_PLANTS["tomato"])
     tomato["profile"]["stages"]["veg"]["nutrient_ids"] = [
         "tomato_grow_a", "tomato_grow_b", "tomato_grow_a",
@@ -210,10 +210,11 @@ def test_nutrient_products_are_stored_per_plant_stage():
         tomato, plant_id="tomato", fallback=plant_catalog.DEFAULT_PLANTS["tomato"]
     )
 
-    assert normalized["profile"]["stages"]["veg"]["nutrient_ids"] == [
-        "tomato_grow_a", "tomato_grow_b",
-    ]
-    assert normalized["profile"]["stages"]["bloom"]["nutrient_ids"] == []
+    assert "nutrient_ids" not in normalized["profile"]["stages"]["veg"]
+    assert all(
+        "nutrient_ids" not in stage
+        for stage in normalized["profile"]["stages"].values()
+    )
 
 
 def test_plant_plan_uses_only_enabled_stages_and_is_copy_safe():

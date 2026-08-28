@@ -79,19 +79,20 @@ def test_image_contains_release_and_sync_dependencies() -> None:
 def test_setup_tools_remain_visible_and_addressable() -> None:
     shell = _text("growasist/web/index.html")
     application = _text("growasist/web/app.js")
-    for module in ("overview", "plants", "nutrients", "hardware", "iot"):
+    for module in ("overview", "plants", "profiles", "nutrients", "hardware", "iot"):
         assert f'data-setup-shortcut="{module}"' in shell
         assert f'"{module}"' in application
     assert 'data-view="dosing"' in shell
     assert 'data-setup-shortcut="dosing"' not in shell
-    assert 'data-setup-shortcut="profiles"' not in shell
+    assert 'data-setup-shortcut="profiles"' in shell
     assert "state.profiles?.[stage]?.nutrient_ids" not in application
-    assert "Profil kütüphanesi" in application
-    assert "Düzenlenebilir yetiştirme profili" in application
+    assert "function renderProfiles" in application
+    assert "Düzenlenebilir başlangıç profili" in application
+    assert "Besin markası · ürün seti · pompa · doz miktarı" in application
     assert "Markalar ve ürünler" in application
     assert "Benim ürünlerim" in application
+    assert "renderNutrientProfiles" not in application
     assert "/api/v1/nutrients/catalog/add" in application
-    assert "/api/v1/nutrient-programs/add" in application
     assert "/api/v1/i2c/discover" in application
     assert "/api/v1/i2c/enroll" in application
     assert "/api/v1/i2c/remove" in application
@@ -101,8 +102,9 @@ def test_setup_tools_remain_visible_and_addressable() -> None:
     assert "data-add-hardware" not in application
     assert "I²C adresi" not in application
     assert "Ölçülen hacim · ml" in application
-    assert "data-start-program" in application
-    assert "Profilin ürünleri" in application
+    assert "data-start-nutrient-set" in application
+    assert "Bu yetiştirmenin besinleri" in application
+    assert "profil kütüphanesini değiştirmez" in application
     assert "Aşama hedefleri" in application
     assert "stageNutrientFields" not in application
     assert "#setup/${setupView || currentSetupView}" in application

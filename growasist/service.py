@@ -311,19 +311,25 @@ class GrowAsistService:
                 or ""
             )[:96]
             catalog = state.get("nutrient_catalog", {})
-            selected_program_id = _text(payload.get("nutrient_program_id"), 128)
+            selected_program_id = _text(
+                payload.get("nutrient_set_id") or payload.get("nutrient_program_id"),
+                128,
+            )
             selected_program = catalog.get("programs", {}).get(selected_program_id)
             program_scope = _text(
-                payload.get("nutrient_program_scope"), 16, "core"
+                payload.get("nutrient_set_scope")
+                or payload.get("nutrient_program_scope"),
+                16,
+                "core",
             ).casefold()
             if program_scope not in {"core", "complete"}:
-                raise ValueError("Besin programı kapsamı core veya complete olmalıdır")
+                raise ValueError("Besin ürün kapsamı core veya complete olmalıdır")
             if selected_program_id and not isinstance(selected_program, dict):
-                raise ValueError("Seçilen besin programı bulunamadı")
+                raise ValueError("Seçilen besin ürün seti bulunamadı")
             if selected_program and not program_matches_environment(
                 selected_program, growing_method, growing_medium
             ):
-                raise ValueError("Seçilen besin programı yetiştirme ortamıyla uyumlu değil")
+                raise ValueError("Seçilen besin ürün seti yetiştirme ortamıyla uyumlu değil")
 
             selected_catalog_ids: list[str] = []
             if selected_program:
@@ -331,8 +337,6 @@ class GrowAsistService:
                 if program_scope == "complete":
                     selected_catalog_ids.extend(selected_program.get("optional_product_ids", []))
                 selected_catalog_ids = list(dict.fromkeys(selected_catalog_ids))
-                for catalog_id in selected_catalog_ids:
-                    self._ensure_catalog_fluid(state, str(catalog_id))
 
             fluid_records = {
                 str(item.get("id")): item
@@ -363,7 +367,15 @@ class GrowAsistService:
             unknown_nutrients = [item for item in nutrient_ids if item not in fluid_records]
             if unknown_nutrients:
                 raise ValueError("Seçilen besin ürünü katalogda bulunamadı")
-            nutrient_products = [deepcopy(fluid_records[item]) for item in nutrient_ids]
+            nutrient_products = (
+                [
+                    deepcopy(catalog.get("products", {})[catalog_id])
+                    for catalog_id in selected_catalog_ids
+                    if catalog_id in catalog.get("products", {})
+                ]
+                if selected_program
+                else [deepcopy(fluid_records[item]) for item in nutrient_ids]
+            )
             catalog_program_name = (
                 str(selected_program.get("name") or "") if selected_program else ""
             )
@@ -376,7 +388,7 @@ class GrowAsistService:
             if selected_program:
                 local_by_catalog = {
                     str(item.get("catalog_id")): str(item.get("id"))
-                    for item in nutrient_products
+                    for item in fluid_records.values()
                     if item.get("catalog_id") and item.get("id")
                 }
                 for stage, stage_products in selected_program.get("stages", {}).items():
@@ -434,6 +446,7 @@ class GrowAsistService:
                     "name": nutrient_program,
                     "nutrient_ids": nutrient_ids,
                     "products": nutrient_products,
+                    "set_id": selected_program_id,
                     "program_id": selected_program_id,
                     "brand_id": (
                         str(selected_program.get("brand_id") or "")
@@ -456,7 +469,7 @@ class GrowAsistService:
                         if selected_program else ""
                     ),
                     "dose_plan_included": False,
-                    "source": "catalog_program" if selected_program else "standalone_grow_start",
+                    "source": "catalog_product_set" if selected_program else "standalone_grow_start",
                 },
                 initial_stage=str(payload.get("initial_stage") or "") or None,
                 cultivation_id=payload.get("cultivation_id"),
@@ -575,29 +588,6 @@ class GrowAsistService:
             values = payload.get("values")
             if not isinstance(values, dict):
                 raise ValueError("Bitki kaydı bir nesne olmalı")
-            allowed_nutrients = {
-                str(item.get("id"))
-                for item in state.get("hardware", {}).get("dosing_fluids", [])
-                if isinstance(item, dict)
-                and item.get("id")
-                and not item.get("required")
-                and item.get("category") not in {"ph", "ph_up", "ph_down"}
-            }
-            profile = values.get("profile")
-            stages = profile.get("stages") if isinstance(profile, dict) else None
-            if isinstance(stages, dict):
-                for target in stages.values():
-                    if not isinstance(target, dict) or "nutrient_ids" not in target:
-                        continue
-                    requested = target.get("nutrient_ids")
-                    if not isinstance(requested, list):
-                        raise ValueError("Aşama besinleri liste olarak gönderilmelidir")
-                    unknown = [
-                        item for item in requested
-                        if not isinstance(item, str) or item not in allowed_nutrients
-                    ]
-                    if unknown:
-                        raise ValueError("Bitki aşamasında katalog dışı besin seçilemez")
             fallback = records.get(plant_id)
             if fallback is None:
                 name = _text(values.get("name"), 96)

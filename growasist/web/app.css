@@ -201,6 +201,18 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
 .record-heading h3 { margin: 6px 0; font: 650 28px var(--display); letter-spacing: -.04em; }
 .record-heading p { max-width: 680px; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .record-type { color: var(--water); font-size: 9px; font-weight: 600; }
+.plant-identity-section { padding: 26px 0; }
+.plant-identity-section > header { margin-bottom: 16px; }
+.plant-identity-section > header h3, .profile-library-heading h3 { margin: 0 0 6px; font: 650 14px var(--display); }
+.plant-identity-section > header p, .profile-library-heading p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.profile-library-heading { padding: 0 10px 17px; }
+.profile-library-heading h3 { margin-top: 6px; }
+.profile-boundary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin: 22px 0 0; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; }
+.profile-boundary > span { padding: 13px 15px; }
+.profile-boundary > span + span { border-left: 1px solid var(--line); }
+.profile-boundary b, .profile-boundary small { display: block; }
+.profile-boundary b { font-size: 9px; }
+.profile-boundary small { margin-top: 4px; color: var(--muted); font-size: 8px; line-height: 1.5; }
 .target-ledger { padding: 28px 0; }
 .target-ledger > header h3, .cultivar-library h3 { margin: 0 0 6px; font: 650 14px var(--display); }
 .target-ledger > header p, .cultivar-library header p { margin: 0; color: var(--muted); font-size: 9px; }
@@ -249,7 +261,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
 .nutrient-workflow b { color: var(--mist); font-size: 10px; }
 .nutrient-workflow small { color: var(--muted); font-size: 8px; }
 .nutrient-workflow > i { color: #49615e; font: normal 10px var(--data); }
-.library-tabs { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); margin-bottom: 18px; border-bottom: 1px solid var(--line-bright); }
+.library-tabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin-bottom: 18px; border-bottom: 1px solid var(--line-bright); }
 .library-tabs button { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 45px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; cursor: pointer; }
 .library-tabs button:hover { color: var(--mist); }
 .library-tabs button.active { border-bottom-color: var(--water); color: var(--mist); }
@@ -622,6 +634,8 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
   .hardware-connection-form { grid-template-columns: 1fr; }
   .profile-preview { grid-template-columns: 1fr; }
   .profile-preview dl { grid-template-columns: 1fr; }
+  .profile-boundary { grid-template-columns: 1fr; }
+  .profile-boundary > span + span { border-top: 1px solid var(--line); border-left: 0; }
   .nutrient-workflow { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .library-tabs button span { font-size: 9px; }
   .program-row { grid-template-columns: 35px minmax(0,1fr) auto; padding: 13px 10px; }

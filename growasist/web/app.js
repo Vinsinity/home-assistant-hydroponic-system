@@ -45,20 +45,16 @@ const viewMeta = {
   dosing: ["Yetiştirme", "Dozaj"],
   setup: ["Sistem", "Alan ve ışık"],
 };
-const setupViewIds = new Set(["overview", "plants", "nutrients", "hardware", "iot"]);
+const setupViewIds = new Set(["overview", "plants", "profiles", "nutrients", "hardware", "iot"]);
 
 let token = sessionStorage.getItem(TOKEN_KEY) || "";
 let state = null;
 let currentView = "today";
 let currentSetupView = "overview";
 let selectedPlantId = "";
+let selectedProfileId = "";
 let nutrientCatalogBrand = "all";
-let nutrientLibraryView = "profiles";
-let nutrientProfilePlantId = "";
-let nutrientProfileEnvironment = "";
-let nutrientProfileBrand = "";
-let nutrientProfileProgramId = "";
-let nutrientProfileScope = "core";
+let nutrientLibraryView = "products";
 let toastTimer = null;
 
 function html(value) {
@@ -153,7 +149,7 @@ function applyRoute() {
   const [view, setupView] = window.location.hash.replace(/^#/, "").split("/");
   currentView = ["journal", "dosing", "setup"].includes(view) ? view : "today";
   if (currentView === "setup") {
-    currentSetupView = setupView === "profiles" ? "plants" : (setupViewIds.has(setupView) ? setupView : "overview");
+    currentSetupView = setupViewIds.has(setupView) ? setupView : "overview";
   }
 }
 
@@ -162,6 +158,7 @@ function syncNavigation() {
   document.querySelectorAll("[data-setup-shortcut]").forEach((item) => item.classList.toggle("active", currentView === "setup" && item.dataset.setupShortcut === currentSetupView));
   if (!state) return;
   document.querySelector('[data-rail-count="plants"]').textContent = `${plantOptions().length} tür`;
+  document.querySelector('[data-rail-count="profiles"]').textContent = `${plantOptions().length} profil`;
   document.querySelector('[data-rail-count="nutrients"]').textContent = `${state.hardware?.dosing_fluids?.length || 0} ürün`;
   document.querySelector('[data-rail-count="hardware"]').textContent = `${state.hardware?.device_assignments?.length || 0} cihaz`;
   const iotCount = Object.values(state.device_registry?.devices || {}).length;
@@ -250,7 +247,7 @@ function renderToday() {
     ["Medya", identity.growing_medium || "—"],
     ["Işık hedefi", stageTarget.photoperiod != null ? `${stageTarget.photoperiod} saat · %${stageTarget.light_intensity}` : "—"],
     ["Armatür", lighting.model || lighting.brand || "Henüz tanımlanmadı"],
-    ["Besin profili", identity.nutrient_program || "Henüz seçilmedi"],
+    ["Besin seçimi", identity.nutrient_program || "Henüz seçilmedi"],
   ];
 
   viewContent.innerHTML = `<section class="grow-head">
@@ -309,14 +306,16 @@ function renderSetup() {
   const modules = [
     ["overview", "Alan ve ışık", "Yöntem, medya ve armatür"],
     ["plants", "Bitki kütüphanesi", `${plantOptions().length} tür`],
+    ["profiles", "Profiller", `${plantOptions().length} yetiştirme profili`],
     ["nutrients", "Besinler", `${state.hardware?.dosing_fluids?.length || 0} ürün`],
     ["hardware", "Yerel donanım", `${state.hardware?.device_assignments?.length || 0} kablolu cihaz`],
     ["iot", "IoT cihazları", `${Object.values(state.device_registry?.devices || {}).length} tanımlı`],
   ];
   const descriptions = {
     overview: ["Sistem", "Yöntemini, yetiştirme medyanı ve ışığını tanımla."],
-    plants: ["Kütüphane", "Bitki kimliğini, aşama süresini ve yetiştirme hedeflerini düzenle."],
-    nutrients: ["Kütüphane", "Bitki profilini aç; ortamına uygun marka ürünlerini aşamalara yerleştir."],
+    plants: ["Kütüphane", "Bitki türlerini, çeşitleri ve kaynakları yönet."],
+    profiles: ["Kütüphane", "Aşama sürelerini ve çevresel hedefleri besinlerden bağımsız düzenle."],
+    nutrients: ["Kütüphane", "Marka ürünlerini incele ve gerçekten kullandıklarını kendi listene ekle."],
     hardware: ["Sistem", "Raspberry Pi üzerine kabloyla bağlanan kartları yönet."],
     iot: ["Sistem", "Wi-Fi ve yerel ağ cihazlarını bul, doğrula ve rol ver."],
   };
@@ -333,6 +332,7 @@ function renderSetup() {
   }));
   const panel = viewContent.querySelector("[data-setup-panel]");
   if (currentSetupView === "plants") renderPlants(panel);
+  else if (currentSetupView === "profiles") renderProfiles(panel);
   else if (currentSetupView === "nutrients") renderNutrients(panel);
   else if (currentSetupView === "hardware") renderHardware(panel);
   else if (currentSetupView === "iot") renderIoT(panel);
@@ -398,23 +398,17 @@ function renderPlants(panel) {
     panel.innerHTML = '<p class="empty-list">Bitki kütüphanesi boş.</p>';
     return;
   }
-  const stages = plant.profile?.stages || {};
   const breeders = state.plant_catalog?.breeders || {};
   panel.innerHTML = `<div class="library-layout">
     <aside class="library-index"><div class="library-tools"><input type="search" data-plant-search placeholder="Bitki ara"><button class="secondary-button compact" type="button" data-add-plant>+ Bitki</button></div>
       <div data-plant-list>${plants.map((item) => `<button type="button" class="library-item ${item.id === plant.id ? "active" : ""}" data-plant-id="${html(item.id)}" data-search="${html(`${item.name} ${item.english_name} ${item.botanical_name}`.toLowerCase())}"><span><b>${html(item.name)}</b><small>${html(item.botanical_name || item.english_name)}</small></span><em>${html(item.cultivars?.length || item.cultivar_examples?.length || 0)}</em></button>`).join("")}</div>
     </aside>
     <form class="library-detail" data-plant-form>
-      <div class="record-heading"><div><span class="record-type">${plant.built_in ? "Düzenlenebilir örnek profil" : "Kendi bitkin"}</span><h3>${html(plant.name)}</h3><p>${html(plant.notes || "Aşama sürelerini ve yetiştirme hedeflerini düzenle.")}</p></div><button class="primary-button" type="submit">Değişiklikleri kaydet</button></div>
-      <details class="advanced-settings plant-identity"><summary>Bitki bilgileri</summary><div class="field-grid">
+      <div class="record-heading"><div><span class="record-type">${plant.built_in ? "Bitki kaydı" : "Kendi bitkin"}</span><h3>${html(plant.name)}</h3><p>Tür, botanik kimlik, çeşit ve kaynak bilgileri. Yetiştirme hedefleri Profiller bölümünde tutulur.</p></div><button class="primary-button" type="submit">Bitkiyi kaydet</button></div>
+      <section class="plant-identity-section"><header><h3>Bitki bilgileri</h3><p>Bu bilgiler bitkiyi ve çeşitlerini tanımlar; herhangi bir besin ürünü içermez.</p></header><div class="field-grid">
         ${field("plant","name","Görünen ad",plant.name)}${field("plant","english_name","İngilizce ad",plant.english_name)}${field("plant","botanical_name","Botanik ad",plant.botanical_name)}
         ${field("plant","category","Kategori",plant.category)}<label class="wide"><span>Not</span><textarea name="plant.notes">${html(plant.notes)}</textarea></label>
-      </div></details>
-      <section class="target-ledger"><header><div><h3>Aşama hedefleri</h3><p>Ürün seçimi Besin Programları bölümünde yapılır; burada yalnızca bitkiye ait hedefler tutulur.</p></div></header>
-        ${stageOrder.map((stage) => { const target = stages[stage] || {}; return `<details class="target-row"><summary><span><b>${html(state.stage_labels[stage] || stage)}</b><small>${target.enabled ? `${html(target.planned_days)} gün · ${html(target.photoperiod)} saat` : "Kullanılmıyor"}</small></span><label class="inline-check"><input name="stage.${stage}.enabled" type="checkbox" ${target.enabled ? "checked" : ""}> Kullan</label></summary><div class="field-grid compact-grid">
-          ${stageTargetFields(stage, target)}
-        </div></details>`; }).join("")}
-      </section>
+      </div></section>
       ${plant.cultivars?.length ? `<section class="cultivar-library"><header><div><h3>Çeşit / strain kütüphanesi</h3><p>${html(plant.cultivars.length)} kayıt · katalog ${html(state.plant_catalog.catalog_version || "yerel")}. Tamamı aranabilir.</p></div><input type="search" data-cultivar-search placeholder="Northern Light, Purple Haze…"></header><div class="cultivar-rows" data-cultivar-list>${cultivarRows(plant, breeders)}</div></section>` : ""}
     </form>
   </div>`;
@@ -428,6 +422,33 @@ function renderPlants(panel) {
   panel.querySelector("[data-cultivar-search]")?.addEventListener("input", (event) => {
     panel.querySelector("[data-cultivar-list]").innerHTML = cultivarRows(plant, breeders, event.target.value);
   });
+}
+
+function renderProfiles(panel) {
+  const plants = plantOptions();
+  if (!selectedProfileId || !state.plant_catalog?.records?.[selectedProfileId]) selectedProfileId = plants[0]?.id || "";
+  const plant = state.plant_catalog?.records?.[selectedProfileId];
+  if (!plant) {
+    panel.innerHTML = '<p class="empty-list">Henüz yetiştirme profili yok.</p>';
+    return;
+  }
+  const stages = plant.profile?.stages || {};
+  panel.innerHTML = `<div class="library-layout profile-workspace">
+    <aside class="library-index"><div class="profile-library-heading"><span class="record-type">Yetiştirme profilleri</span><h3>Bitkiye göre hedefler</h3><p>Besinlerden tamamen bağımsızdır.</p></div>
+      <div>${plants.map((item) => `<button type="button" class="library-item ${item.id === plant.id ? "active" : ""}" data-profile-id="${html(item.id)}"><span><b>${html(item.name)}</b><small>${html(item.botanical_name || item.english_name)}</small></span><em>${Object.values(item.profile?.stages || {}).filter((stage) => stage.enabled).length}</em></button>`).join("")}</div>
+    </aside>
+    <form class="library-detail" data-profile-form>
+      <div class="record-heading"><div><span class="record-type">Düzenlenebilir başlangıç profili</span><h3>${html(plant.name)}</h3><p>Aşama, ışık ve çevresel hedefleri belirler. Besin markası, ürünü veya doz planı saklamaz.</p></div><button class="primary-button" type="submit">Profili kaydet</button></div>
+      <section class="profile-boundary" aria-label="Profil kapsamı"><span><b>Bu profilde olanlar</b><small>Aşama süresi · ışık · sıcaklık · nem · VPD · CO₂ · pH · EC · su hedefleri</small></span><span><b>Bu profilde olmayanlar</b><small>Besin markası · ürün seti · pompa · doz miktarı</small></span></section>
+      <section class="target-ledger"><header><div><h3>Aşama hedefleri</h3><p>Bir yetiştirme başlatırken bu profil kopyalanır; besin seçimi ayrıca yapılır.</p></div></header>
+        ${stageOrder.map((stage) => { const target = stages[stage] || {}; return `<details class="target-row"><summary><span><b>${html(state.stage_labels[stage] || stage)}</b><small>${target.enabled ? `${html(target.planned_days)} gün · ${html(target.photoperiod)} saat` : "Kullanılmıyor"}</small></span><label class="inline-check"><input name="stage.${stage}.enabled" type="checkbox" ${target.enabled ? "checked" : ""}> Kullan</label></summary><div class="field-grid compact-grid">
+          ${stageTargetFields(stage, target)}
+        </div></details>`; }).join("")}
+      </section>
+    </form>
+  </div>`;
+  panel.querySelectorAll("[data-profile-id]").forEach((button) => button.addEventListener("click", () => { selectedProfileId = button.dataset.profileId; renderSetup(); }));
+  panel.querySelector("[data-profile-form]").addEventListener("submit", saveProfile);
 }
 
 function cultivarRows(plant, breeders, query = "") {
@@ -454,14 +475,22 @@ async function savePlant(event) {
   const plant = JSON.parse(JSON.stringify(state.plant_catalog.records[selectedPlantId]));
   const data = new FormData(event.currentTarget);
   for (const key of ["name", "english_name", "botanical_name", "category", "notes"]) plant[key] = data.get(`plant.${key}`) || "";
+  await api("/api/v1/plants", { method: "POST", body: JSON.stringify({ plant_id: selectedPlantId, values: plant }) });
+  await loadState(); currentSetupView = "plants"; showToast("Bitki kaydedildi.");
+}
+
+async function saveProfile(event) {
+  event.preventDefault();
+  const plant = JSON.parse(JSON.stringify(state.plant_catalog.records[selectedProfileId]));
+  const data = new FormData(event.currentTarget);
   plant.profile ||= { kind: "editable_example", stages: {} };
   for (const stage of stageOrder) {
     const target = plant.profile.stages[stage] ||= {};
     target.enabled = data.has(`stage.${stage}.enabled`);
     for (const key of ["planned_days","photoperiod","light_intensity","day_temperature","night_temperature","humidity","vpd","co2","water_temperature","do_minimum","ph_min","ph_max","ec_min","ec_max"]) target[key] = Number(data.get(`stage.${stage}.${key}`));
   }
-  await api("/api/v1/plants", { method: "POST", body: JSON.stringify({ plant_id: selectedPlantId, values: plant }) });
-  await loadState(); currentSetupView = "plants"; showToast("Bitki profili kaydedildi.");
+  await api("/api/v1/plants", { method: "POST", body: JSON.stringify({ plant_id: selectedProfileId, values: plant }) });
+  await loadState(); currentSetupView = "profiles"; showToast("Yetiştirme profili kaydedildi.");
 }
 
 function fluidLabel(fluid) {
@@ -481,11 +510,9 @@ function fluidMediumLabel(value) {
 
 function renderNutrients(panel) {
   const catalog = state.nutrient_catalog || {};
-  const profiles = plantOptions();
   const products = catalog.product_order || [];
   const fluids = state.hardware?.dosing_fluids || [];
   const tabs = [
-    ["profiles", "Profiller", `${profiles.length}`],
     ["products", "Markalar ve ürünler", `${products.length}`],
     ["mine", "Benim ürünlerim", `${fluids.length}`],
   ];
@@ -497,82 +524,13 @@ function renderNutrients(panel) {
   }));
   const body = panel.querySelector("[data-nutrient-library-panel]");
   if (nutrientLibraryView === "products") renderNutrientProducts(body);
-  else if (nutrientLibraryView === "mine") renderMyNutrients(body);
-  else renderNutrientProfiles(body);
+  else renderMyNutrients(body);
 }
 
 function nutrientProgramProducts(program, scope = "core") {
   const ids = [...(program?.core_product_ids || [])];
   if (scope === "complete") ids.push(...(program?.optional_product_ids || []));
   return [...new Set(ids)].map((productId) => state.nutrient_catalog?.products?.[productId]).filter(Boolean);
-}
-
-function nutrientEnvironmentFromSetup() {
-  const system = state.system_profile?.system || {};
-  const method = String(system.growing_method || "").toLocaleLowerCase("tr");
-  const medium = String(system.growing_medium || "").toLocaleLowerCase("tr");
-  if (method.includes("coco") || medium.includes("coco")) return "coco";
-  if (method.includes("soil") || method.includes("toprak") || medium.includes("soil") || medium.includes("toprak")) return "soil";
-  return "hydro";
-}
-
-function nutrientProfilePrograms(environment) {
-  const catalog = state.nutrient_catalog || {};
-  return (catalog.program_order || []).map((programId) => catalog.programs?.[programId]).filter((program) => {
-    const supported = program?.supported_environments || [];
-    return program?.cycle_coverage === "complete" && (supported.includes("universal") || supported.includes(environment));
-  });
-}
-
-function renderNutrientProfiles(panel) {
-  const profiles = plantOptions();
-  if (!nutrientProfilePlantId || !state.plant_catalog?.records?.[nutrientProfilePlantId]) nutrientProfilePlantId = profiles[0]?.id || "";
-  if (!nutrientProfileEnvironment) nutrientProfileEnvironment = nutrientEnvironmentFromSetup();
-  const plant = state.plant_catalog?.records?.[nutrientProfilePlantId];
-  if (!plant) { panel.innerHTML = '<p class="empty-list">Henüz yetiştirme profili yok.</p>'; return; }
-  const programs = nutrientProfilePrograms(nutrientProfileEnvironment);
-  const brandIds = [...new Set(programs.map((program) => program.brand_id))];
-  if (!brandIds.includes(nutrientProfileBrand)) { nutrientProfileBrand = ""; nutrientProfileProgramId = ""; }
-  const brandPrograms = programs.filter((program) => program.brand_id === nutrientProfileBrand);
-  if (!brandPrograms.some((program) => program.id === nutrientProfileProgramId)) nutrientProfileProgramId = brandPrograms[0]?.id || "";
-  const selectedProgram = state.nutrient_catalog?.programs?.[nutrientProfileProgramId];
-  const environmentOptions = [["hydro","Hidroponik"],["coco","Coco"],["soil","Toprak"]];
-  const brandOptions = [["","Marka seçin"], ...brandIds.map((brandId) => [brandId, state.nutrient_catalog?.brands?.[brandId]?.name || brandId])];
-  const seriesOptions = brandPrograms.length ? brandPrograms.map((program) => [program.id, program.name]) : [["","Önce marka seçin"]];
-  panel.innerHTML = `<section class="profile-library"><aside class="profile-index"><header><span class="record-type">Profil kütüphanesi</span><h3>Bitkiler</h3></header>${profiles.map((item) => `<button type="button" class="profile-index-row ${item.id === plant.id ? "active" : ""}" data-nutrient-profile="${html(item.id)}"><span><b>${html(item.name)}</b><small>${html(item.botanical_name || item.english_name)}</small></span><em>${Object.values(item.profile?.stages || {}).filter((stage) => stage.enabled).length} aşama</em></button>`).join("")}</aside>
-    <div class="profile-sheet"><header class="profile-title"><div><span class="record-type">Düzenlenebilir yetiştirme profili</span><h3>${html(plant.name)}</h3><p>${html(plant.notes || `${plant.name} için aşama hedefleri ve marka ürün eşlemesi.`)}</p>${plant.growth_types?.length ? `<small>${html(plant.growth_types.map((item) => item.name).join(" · "))}</small>` : ""}</div></header>
-      <section class="profile-brand-picker"><header><div><h4>Bu profilde kullanacağın ürünler</h4><p>Ortamını ve elindeki markayı seç; uygun seri aşamalara yerleşsin.</p></div></header><div class="profile-pick-grid">
-        <label><span>Yetiştirme ortamı</span><select data-profile-environment>${optionRows(environmentOptions,nutrientProfileEnvironment)}</select></label>
-        <label><span>Marka</span><select data-profile-brand>${optionRows(brandOptions,nutrientProfileBrand)}</select></label>
-        <label><span>Seri</span><select data-profile-series ${nutrientProfileBrand ? "" : "disabled"}>${optionRows(seriesOptions,nutrientProfileProgramId)}</select></label>
-        <label><span>Ürün seti</span><select data-profile-scope><option value="core" ${nutrientProfileScope === "core" ? "selected" : ""}>Temel ürünler</option><option value="complete" ${nutrientProfileScope === "complete" ? "selected" : ""}>Yardımcı ürünlerle</option></select></label>
-      </div></section>
-      <section class="profile-stage-plan"><header><h4>Aşamalar ve ürünler</h4><p>Profilin bitki hedefleri solda, seçilen markanın ürünleri sağda.</p></header>${stageOrder.filter((stage) => plant.profile?.stages?.[stage]?.enabled).map((stage) => nutrientProfileStageRow(plant, selectedProgram, stage)).join("")}</section>
-      <footer class="profile-actions"><span>${selectedProgram ? `${html(selectedProgram.brand)} · ${html(selectedProgram.name)}` : "Marka seçtiğinde ürün eşleşmesi burada hazır olacak."}</span><button class="primary-button" type="button" data-add-profile-products ${selectedProgram ? "" : "disabled"}>Ürünleri listeme ekle</button></footer>
-    </div></section>`;
-  panel.querySelectorAll("[data-nutrient-profile]").forEach((button) => button.addEventListener("click", () => { nutrientProfilePlantId = button.dataset.nutrientProfile; renderNutrients(panel.closest("[data-setup-panel]")); }));
-  panel.querySelector("[data-profile-environment]").addEventListener("change", (event) => { nutrientProfileEnvironment = event.target.value; nutrientProfileBrand = ""; nutrientProfileProgramId = ""; renderNutrients(panel.closest("[data-setup-panel]")); });
-  panel.querySelector("[data-profile-brand]").addEventListener("change", (event) => { nutrientProfileBrand = event.target.value; nutrientProfileProgramId = ""; renderNutrients(panel.closest("[data-setup-panel]")); });
-  panel.querySelector("[data-profile-series]").addEventListener("change", (event) => { nutrientProfileProgramId = event.target.value; renderNutrients(panel.closest("[data-setup-panel]")); });
-  panel.querySelector("[data-profile-scope]").addEventListener("change", (event) => { nutrientProfileScope = event.target.value; renderNutrients(panel.closest("[data-setup-panel]")); });
-  panel.querySelector("[data-add-profile-products]")?.addEventListener("click", addSelectedProfileProducts);
-}
-
-function nutrientProfileStageRow(plant, program, stage) {
-  const target = plant.profile?.stages?.[stage] || {};
-  const stageSet = program?.stages?.[stage] || {};
-  const ids = [...(stageSet.core_product_ids || [])];
-  if (nutrientProfileScope === "complete") ids.push(...(stageSet.optional_product_ids || []));
-  const products = [...new Set(ids)].map((productId) => state.nutrient_catalog?.products?.[productId]).filter(Boolean);
-  const targets = stage === "harvest" ? `${target.planned_days} gün` : `${target.planned_days} gün · pH ${target.ph_min}–${target.ph_max} · EC ${target.ec_min}–${target.ec_max}`;
-  return `<article class="profile-stage-row"><span><b>${html(state.stage_labels[stage] || stage)}</b><small>${html(targets)}</small></span><div>${products.length ? products.map((product) => `<span><b>${html(product.name)}</b><small>${html(product.category === "base" ? "Ana besin" : fluidLabel(product))}</small></span>`).join("") : `<small>${program ? "Bu aşama için seri ürünü yok; üretici çizelgesini kontrol et." : "Marka ve seri seçildiğinde ürünler gösterilir."}</small>`}</div></article>`;
-}
-
-async function addSelectedProfileProducts() {
-  if (!nutrientProfileProgramId) return;
-  const result = await api("/api/v1/nutrient-programs/add", { method: "POST", body: JSON.stringify({ program_id: nutrientProfileProgramId, scope: nutrientProfileScope }) });
-  await loadState(); currentSetupView = "nutrients"; nutrientLibraryView = "profiles";
-  showToast(`${result.result.added.length} ürün listenize eklendi.`);
 }
 
 function renderNutrientProducts(panel) {
@@ -582,7 +540,7 @@ function renderNutrientProducts(panel) {
   const products = (catalog.product_order || []).map((productId) => catalog.products?.[productId]).filter(Boolean);
   const selectedCatalogIds = new Set(fluids.map((fluid) => fluid.catalog_id).filter(Boolean));
   const brandOptions = [["all",`Tüm markalar · ${products.length}`], ...brands.map((brand) => [brand.id, `${brand.name} · ${brand.product_ids?.length || 0}`])];
-  panel.innerHTML = `<section class="nutrient-catalog"><header class="catalog-head"><div><span class="record-type">Ürün kütüphanesi</span><h3>${brands.length} marka · ${products.length} ürün</h3><p>Tek bir ürünü inceleyip listene ekleyebilirsin. Tam bir seri için Besin Programları'nı kullan.</p></div><button class="secondary-button" type="button" data-add-fluid>Özel ürün ekle</button></header>
+  panel.innerHTML = `<section class="nutrient-catalog"><header class="catalog-head"><div><span class="record-type">Besin ürünleri</span><h3>${brands.length} marka · ${products.length} ürün</h3><p>Ürünleri incele; gerçekten elinde olanları kendi listene ekle. Yetiştirme profilleri bu katalogdan bağımsızdır.</p></div><button class="secondary-button" type="button" data-add-fluid>Özel ürün ekle</button></header>
     <div class="catalog-tools"><label><span>Ürün ara</span><input type="search" data-catalog-search placeholder="Örn. Sensi, CANNA, CalMag, Bloom…" autocomplete="off"></label><label><span>Marka</span><select data-catalog-brand>${optionRows(brandOptions,nutrientCatalogBrand)}</select></label></div>
     <div class="catalog-results">${products.map((product) => `<button type="button" class="catalog-product ${selectedCatalogIds.has(product.id) ? "selected" : ""}" data-catalog-product="${html(product.id)}" data-catalog-brand-id="${html(product.brand_id)}" data-catalog-search-text="${html(`${product.brand} ${product.name} ${product.line} ${product.part} ${product.npk}`.toLocaleLowerCase("tr"))}"><span class="catalog-brand">${html(product.brand)}</span><span><b>${html(product.name)}</b><small>${html(product.line)}${product.part ? ` · ${html(product.part)}` : ""}</small></span><span><b>${html(fluidLabel(product))}</b><small>${html(fluidPhaseLabel(product.phase))} · ${html(fluidMediumLabel(product.medium))}</small></span><span><b>${html(product.npk || "NPK etikette")}</b><small>${html(product.form === "powder" ? "Toz" : "Sıvı")} · ${html(product.input_type === "organic" ? "Organik" : product.input_type === "biological" ? "Biyolojik" : "Mineral")}</small></span><em>${selectedCatalogIds.has(product.id) ? "Eklendi" : "İncele"}</em></button>`).join("")}</div></section>`;
   panel.querySelector("[data-add-fluid]").addEventListener("click", () => openFluidDialog());
@@ -603,7 +561,7 @@ function renderNutrientProducts(panel) {
 
 function renderMyNutrients(panel) {
   const fluids = state.hardware?.dosing_fluids || [];
-  panel.innerHTML = `<section class="my-nutrients"><header class="catalog-head"><div><span class="record-type">Yerel ürün listen</span><h3>Benim ürünlerim · ${fluids.length}</h3><p>Elinde bulunan ürünler burada tutulur. Pompa bağlantısı ve kalibrasyon Dozaj bölümünde yapılır.</p></div><button class="secondary-button" type="button" data-add-fluid>Özel ürün ekle</button></header><div class="record-ledger">${fluids.map((fluid) => `<button type="button" class="record-row" data-fluid-id="${html(fluid.id)}"><span class="record-code">${html(fluid.required ? "pH" : "N")}</span><span><b>${html(fluid.name)}</b><small>${html(fluid.brand || "Belirtilmedi")} · ${html(fluid.line || fluid.part || "Özel ürün")}</small></span><span>${html(fluidLabel(fluid))}</span><small>${html(fluidPhaseLabel(fluid.phase))} · ${html(fluidMediumLabel(fluid.medium))}</small><em>Düzenle</em></button>`).join("") || '<p class="empty-list">Henüz ürün eklenmedi. Bir profil açıp marka seçebilir veya özel ürün ekleyebilirsin.</p>'}</div></section>`;
+  panel.innerHTML = `<section class="my-nutrients"><header class="catalog-head"><div><span class="record-type">Elindeki ürünler</span><h3>Benim ürünlerim · ${fluids.length}</h3><p>Burada yalnızca sahip olduğun ürünler tutulur. Profil hedefleri Profiller, pompa bağlantısı ve kalibrasyon Dozaj bölümündedir.</p></div><button class="secondary-button" type="button" data-add-fluid>Özel ürün ekle</button></header><div class="record-ledger">${fluids.map((fluid) => `<button type="button" class="record-row" data-fluid-id="${html(fluid.id)}"><span class="record-code">${html(fluid.required ? "pH" : "N")}</span><span><b>${html(fluid.name)}</b><small>${html(fluid.brand || "Belirtilmedi")} · ${html(fluid.line || fluid.part || "Özel ürün")}</small></span><span>${html(fluidLabel(fluid))}</span><small>${html(fluidPhaseLabel(fluid.phase))} · ${html(fluidMediumLabel(fluid.medium))}</small><em>Düzenle</em></button>`).join("") || '<p class="empty-list">Henüz ürün eklenmedi. Markalar ve ürünler bölümünden ekleyebilir veya özel ürün oluşturabilirsin.</p>'}</div></section>`;
   panel.querySelector("[data-add-fluid]").addEventListener("click", () => openFluidDialog());
   panel.querySelectorAll("[data-fluid-id]").forEach((button) => button.addEventListener("click", () => openFluidDialog(fluids.find((item) => item.id === button.dataset.fluidId))));
 }
@@ -930,7 +888,7 @@ function openStartDialog() {
     kicker: "Yeni yetiştirme",
     title: "Yetiştirmeyi başlat",
     submitLabel: "Yetiştirmeyi başlat",
-    body: `<p class="start-lead">Önce bitkini ve başlangıç aşamasını seç. Diğer bilgiler hazır gelir.</p>
+    body: `<p class="start-lead">Bitkini ve yetiştirme profilini seç. Besin seçimi bu profile değil, yalnızca başlatacağın yetiştirmeye kaydedilir.</p>
       <div class="dialog-grid start-core">
         <label><span>Bitki türü</span><select name="plant_profile_id" data-plant-select>${plants.map((plant) => `<option value="${html(plant.id)}">${html(plant.name)}</option>`).join("")}<option value="">Diğer / kendi bitkim</option></select></label>
         <label data-custom-plant hidden><span>Bitkinin adı</span><input name="plant_species" maxlength="96" placeholder="Tür veya yaygın adı"></label>
@@ -944,11 +902,11 @@ function openStartDialog() {
         <div class="profile-preview full" data-profile-preview></div>
         <label><span>Yetiştirme yöntemi</span><select name="growing_method" data-start-method>${optionRows(cultivationMethods, system.growing_method || "RDWC")}</select></label>
         <label><span>Yetiştirme medyası</span><select name="growing_medium" data-start-medium>${optionRows(growingMedia, system.growing_medium || "")}</select></label>
-        <section class="start-program-picker full"><header><span>Profilin ürünleri</span><small>Bitki ve ortam hazır; yalnızca kullanacağın markayı seç.</small></header><div class="dialog-grid">
-          <label><span>Marka</span><select name="nutrient_brand" data-start-program-brand></select></label>
-          <label><span>Marka serisi</span><select name="nutrient_program_id" data-start-program></select></label>
-          <label class="full"><span>Ürün kapsamı</span><select name="nutrient_program_scope" data-start-program-scope><option value="core">Temel ürün seti</option><option value="complete">Geniş set · yardımcı ürünlerle</option></select></label>
-        </div><div class="start-program-preview" data-start-program-preview></div></section>
+        <section class="start-program-picker full"><header><span>Bu yetiştirmenin besinleri</span><small>İsteğe bağlıdır; profil kütüphanesini değiştirmez.</small></header><div class="dialog-grid">
+          <label><span>Marka</span><select name="nutrient_brand" data-start-nutrient-brand></select></label>
+          <label><span>Ürün serisi</span><select name="nutrient_set_id" data-start-nutrient-set></select></label>
+          <label class="full"><span>Ürün kapsamı</span><select name="nutrient_set_scope" data-start-nutrient-scope><option value="core">Temel ürünler</option><option value="complete">Yardımcı ürünlerle</option></select></label>
+        </div><div class="start-program-preview" data-start-nutrient-preview></div></section>
       </div>
       <details class="advanced-settings start-options"><summary>Diğer bilgiler</summary><div class="dialog-grid">
         <label class="full"><span>Yetiştirme adı</span><input name="name" placeholder="Boş bırakırsan otomatik adlandırılır"></label>
@@ -962,11 +920,11 @@ function openStartDialog() {
   plantSelect.addEventListener("change", updateStartPlantFields);
   growthSelect.addEventListener("change", updateCultivarOptions);
   stageSelect.addEventListener("change", updateStartProfilePreview);
-  dialogBody.querySelector("[data-start-method]").addEventListener("change", updateStartNutrientPrograms);
-  dialogBody.querySelector("[data-start-medium]").addEventListener("change", updateStartNutrientPrograms);
-  dialogBody.querySelector("[data-start-program-brand]").addEventListener("change", updateStartNutrientPrograms);
-  dialogBody.querySelector("[data-start-program]").addEventListener("change", updateStartProgramPreview);
-  dialogBody.querySelector("[data-start-program-scope]").addEventListener("change", updateStartProgramPreview);
+  dialogBody.querySelector("[data-start-method]").addEventListener("change", updateStartNutrientSets);
+  dialogBody.querySelector("[data-start-medium]").addEventListener("change", updateStartNutrientSets);
+  dialogBody.querySelector("[data-start-nutrient-brand]").addEventListener("change", updateStartNutrientSets);
+  dialogBody.querySelector("[data-start-nutrient-set]").addEventListener("change", updateStartNutrientPreview);
+  dialogBody.querySelector("[data-start-nutrient-scope]").addEventListener("change", updateStartNutrientPreview);
   updateStartPlantFields();
 }
 
@@ -998,7 +956,7 @@ function updateStartPlantFields() {
   stageSelect.innerHTML = options || '<option value="">Örnek profile göre otomatik</option>';
   updateCultivarOptions();
   updateStartProfilePreview();
-  updateStartNutrientPrograms();
+  updateStartNutrientSets();
 }
 
 function updateStartProfilePreview() {
@@ -1023,41 +981,41 @@ function startNutrientEnvironment() {
   return "hydro";
 }
 
-function startProgramMatches(program) {
+function startNutrientSetMatches(program) {
   const environment = startNutrientEnvironment();
   const supported = program?.supported_environments || [];
   return supported.includes("universal") || supported.includes(environment);
 }
 
-function updateStartNutrientPrograms() {
+function updateStartNutrientSets() {
   const catalog = state.nutrient_catalog || {};
-  const brandSelect = dialogBody.querySelector("[data-start-program-brand]");
-  const programSelect = dialogBody.querySelector("[data-start-program]");
+  const brandSelect = dialogBody.querySelector("[data-start-nutrient-brand]");
+  const programSelect = dialogBody.querySelector("[data-start-nutrient-set]");
   if (!brandSelect || !programSelect) return;
-  const programs = (catalog.program_order || []).map((programId) => catalog.programs?.[programId]).filter((program) => program?.cycle_coverage === "complete" && startProgramMatches(program));
+  const programs = (catalog.program_order || []).map((programId) => catalog.programs?.[programId]).filter((program) => program?.cycle_coverage === "complete" && startNutrientSetMatches(program));
   const previousBrand = brandSelect.value;
   const brandIds = [...new Set(programs.map((program) => program.brand_id))];
-  brandSelect.innerHTML = `<option value="">Şimdilik ürün eşleştirme</option>${brandIds.map((brandId) => `<option value="${html(brandId)}" ${previousBrand === brandId ? "selected" : ""}>${html(catalog.brands?.[brandId]?.name || brandId)}</option>`).join("")}`;
+  brandSelect.innerHTML = `<option value="">Besin seçmeden devam et</option>${brandIds.map((brandId) => `<option value="${html(brandId)}" ${previousBrand === brandId ? "selected" : ""}>${html(catalog.brands?.[brandId]?.name || brandId)}</option>`).join("")}`;
   const brandId = brandSelect.value;
   const previousProgram = programSelect.value;
   const matching = programs.filter((program) => program.brand_id === brandId);
   programSelect.innerHTML = brandId ? matching.map((program) => `<option value="${html(program.id)}" ${program.id === previousProgram ? "selected" : ""}>${html(program.name)}</option>`).join("") : '<option value="">Önce marka seçin</option>';
   programSelect.disabled = !brandId;
-  updateStartProgramPreview();
+  updateStartNutrientPreview();
 }
 
-function updateStartProgramPreview() {
-  const programId = dialogBody.querySelector("[data-start-program]")?.value;
-  const scope = dialogBody.querySelector("[data-start-program-scope]")?.value || "core";
+function updateStartNutrientPreview() {
+  const programId = dialogBody.querySelector("[data-start-nutrient-set]")?.value;
+  const scope = dialogBody.querySelector("[data-start-nutrient-scope]")?.value || "core";
   const program = state.nutrient_catalog?.programs?.[programId];
-  const preview = dialogBody.querySelector("[data-start-program-preview]");
+  const preview = dialogBody.querySelector("[data-start-nutrient-preview]");
   if (!preview) return;
   if (!program) {
-    preview.innerHTML = '<span><b>Marka ürünü eşleştirilmedi</b><small>Yetiştirmeyi takip için başlatabilir, ürünleri daha sonra profile ekleyebilirsin.</small></span>';
+    preview.innerHTML = '<span><b>Besin seçilmedi</b><small>Yetiştirmeyi yalnızca profil hedefleriyle başlatabilirsin. Besin seçimi profili hiçbir zaman değiştirmez.</small></span>';
     return;
   }
   const products = nutrientProgramProducts(program, scope);
-  preview.innerHTML = `<div><span class="record-type">${html(program.brand)}</span><b>${html(program.name)}</b><small>${html(products.map((item) => item.name).join(" · "))}</small></div><strong>${products.length}<small>ürün</small></strong><p>Seçim yetiştirme kaydına değişmez kopya olarak yazılır. Doz miktarı otomatik uygulanmaz.</p>`;
+  preview.innerHTML = `<div><span class="record-type">${html(program.brand)}</span><b>${html(program.name)}</b><small>${html(products.map((item) => item.name).join(" · "))}</small></div><strong>${products.length}<small>ürün</small></strong><p>Bu ürünler yalnızca yeni yetiştirme kaydına kopyalanır. Profil ve Benim ürünlerim listesi değişmez; doz miktarı otomatik uygulanmaz.</p>`;
 }
 
 function updateCultivarOptions() {

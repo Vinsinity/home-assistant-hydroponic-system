@@ -15,23 +15,22 @@
   Preserve stable `#setup/...` routes, with a compact module switcher only on
   mobile where the full sidebar is unavailable.
 - Remove user-owned product IDs from the Plant Library editor. Plant profiles
-  now own crop-specific stage targets, while reusable nutrient programs own
-  manufacturer product sets and stage mapping.
+  now own crop-specific stage targets only, while nutrients remain independent
+  catalogue/inventory records selected separately for one cultivation.
 - Add a versioned SQLite manufacturer nutrient catalogue with 367 products from
   20 major brands. The Nutrients workspace now supports brand/product search,
   product details with official source links, and idempotent one-click copying
   into the user's own product list while preserving custom products.
-- Add 79 catalogue-derived nutrient-program profiles, including explicit
+- Add 79 catalogue-derived nutrient product-set mappings, including explicit
   medium/water variants for manufacturer lines where products are alternatives.
-  Filter recommendations by hydroponic, coco, or soil setup and import a core or
-  expanded product set atomically without treating the profile as a dose chart.
-- Keep those manufacturer mappings behind a profile-first Nutrients screen.
-  The primary library contains the seven persistent plant profiles; opening one
-  shows its stage targets and places the selected brand series' products beside
-  each applicable stage instead of exposing a long program list.
-- Connect grow start to the plant → environment → brand → program flow and
-  snapshot the selected catalogue version, product identities, and per-stage
-  mapping into the immutable cultivation record.
+  Filter choices by hydroponic, coco, or soil setup without treating a product
+  set as a grow profile or dose chart.
+- Give Profiles its own route and keep Nutrients limited to the manufacturer
+  product catalogue and the user's owned products. Legacy nutrient IDs are
+  removed from plant stages during normalization.
+- Connect grow start to independent profile and nutrient choices. Snapshot the
+  selected catalogue version, product identities, and per-stage product mapping
+  into that cultivation without mutating the reusable profile or owned inventory.
 - Move Dosing out of System setup and into top-level cultivation navigation;
   keep physical pump mapping, bounded tests, calibration, and safety limits
   together without enabling automatic control.

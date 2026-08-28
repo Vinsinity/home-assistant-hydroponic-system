@@ -17,23 +17,20 @@ The repository now includes a usable Home Assistant-independent product slice:
 - the append-only **Journal** records water, nutrients, pH, reservoir work,
   maintenance, calibration, stage changes, and notes without exposing update or
   delete operations;
-- the sidebar separates daily cultivation work from reusable **Library** records
-  and physical **System** setup. Plant Library owns crop-specific stage targets,
-  Nutrients owns reusable manufacturer programs/products, and **Dosing** is a
-  top-level cultivation operation rather than a setup module;
+- the sidebar separates **Plant Library**, **Profiles**, and **Nutrients** into
+  independent workspaces. Plant Library owns species/cultivar identity, Profiles
+  owns stage and environmental targets, Nutrients owns product catalogue and
+  inventory, and **Dosing** owns pumps and calibration;
 - **Nutrients** includes a versioned built-in catalogue of 367 products across
-  20 major manufacturers. Its default view is the seven persistent plant
-  profiles, not a flat manufacturer-series list. Opening a plant shows its own
-  stage targets; choosing environment, brand, and series places matching
-  products beside those stages;
-- 79 manufacturer product-set mappings stay behind the profile picker. They
-  separate water/medium variants, filter by hydroponic, coco, or soil setup, and
-  copy either the core set or an explicitly selected expanded set into the
-  user's library in one atomic operation;
-- selecting a brand series for a profile at grow start copies its product identities and
-  stage map into an immutable cultivation snapshot. Product-set profiles do not
-  invent feed rates; current manufacturer charts and actual plant/water
-  conditions remain authoritative;
+  20 major manufacturers. It contains only **Brands & Products** and **My
+  Products**; grow profiles never appear inside this workspace;
+- 79 internal manufacturer product-set mappings separate water/medium variants
+  and filter choices by hydroponic, coco, or soil setup only during grow start;
+- selecting a brand series at grow start copies its product identities and stage
+  map into that cultivation's immutable nutrient snapshot. It does not change
+  the grow profile or silently add products to the user's inventory. These
+  mappings contain no feed rates; current manufacturer charts and actual
+  plant/water conditions remain authoritative;
 - nutrient-product identity, physical hardware, and pump/fluid mapping remain
   separate records, and saving any of them never enables equipment control;
 - SQLite WAL storage keeps immutable journal events and full state revisions;

@@ -6,7 +6,7 @@ catalogue update cannot remove a selected product or rewrite a cultivation
 snapshot.
 
 Catalogue version `2026.08.28.3` contains 367 products from 20 manufacturers
-and 79 reusable product-set profiles:
+and 79 internal product-set mappings:
 
 | Manufacturer | Products | Official source |
 | --- | ---: | --- |
@@ -37,16 +37,17 @@ and verification date. NPK is populated only when the manufacturer publishes an
 unambiguous value. Labels and guaranteed analyses can vary by country; the
 physical product label and current manufacturer feed chart remain authoritative.
 
-Program profiles group the line's base products, separate known medium or water
+Product-set mappings group the line's base products, separate known medium or water
 alternatives, and map product phase labels to GrowAsist stages. Compatible
 manufacturer supplements are offered only as an optional expanded set. These
-profiles are not official dose schedules and contain no ml/L, EC, or ppm rate.
+mappings are not grow profiles or official dose schedules and contain no ml/L,
+EC, or ppm rate.
 
-At grow start, the selected program is filtered by the configured hydroponic,
-coco, or soil environment. Its selected products are copied into the user's
-local list and the catalogue version, product identities, and stage map are
-snapshotted into the cultivation record. Later catalogue changes therefore
-cannot rewrite grow history.
+At grow start, the available product sets are filtered by the configured
+hydroponic, coco, or soil environment. The selected catalogue version, product
+identities, and stage map are snapshotted only into the cultivation record. The
+grow profile and user's owned-product list are not changed. Later catalogue
+changes therefore cannot rewrite grow history.
 
 Automatic dosing never follows catalogue text. A product still has to be mapped
 to a physical pump and calibrated. Any future automatic application must also
