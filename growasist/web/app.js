@@ -37,10 +37,12 @@ const eventSymbols = {
   photo: "□", alarm: "!", ai_recommendation: "✦",
 };
 const stageOrder = ["germination", "early_veg", "veg", "bloom", "darkness", "harvest"];
+const cultivationMethods = [["RDWC","RDWC"],["DWC","DWC"],["NFT","NFT"],["Ebb and Flow","Ebb & Flow"],["Drip","Damla sulama"],["Aeroponics","Aeroponik"],["Kratky","Kratky"],["Coco","Coco"],["Soil","Toprak"]];
+const growingMedia = [["","Seçin"],["Expanded clay","Kil bilyesi"],["Rockwool","Taş yünü"],["Coco coir","Coco coir"],["Perlite","Perlit"],["Soil","Toprak"],["Water only","Yalnız su"],["Mixed","Karışım"]];
 const viewMeta = {
-  today: ["YETİŞTİRME MERKEZİ", "Bugün"],
-  journal: ["KALICI KAYIT", "Günlük"],
-  setup: ["RASPBERRY PI", "Kurulum"],
+  today: ["YETİŞTİRME", "Genel Bakış"],
+  journal: ["YETİŞTİRME", "Günlük"],
+  setup: ["SİSTEM", "Alan ve ışık"],
 };
 const setupViewIds = new Set(["overview", "plants", "profiles", "nutrients", "hardware", "dosing"]);
 
@@ -179,6 +181,7 @@ function render() {
   const [kicker, title] = viewMeta[currentView];
   viewKicker.textContent = kicker;
   viewTitle.textContent = title;
+  document.title = `${title} · GrowAsist`;
   if (currentView === "journal") renderJournal();
   else if (currentView === "setup") renderSetup();
   else renderToday();
@@ -263,12 +266,7 @@ function renderToday() {
   <div class="setup-save"><button class="danger-button" data-finish-grow>Yetiştirmeyi tamamla</button></div>`;
 
   viewContent.querySelectorAll("[data-quick]").forEach((button) => button.addEventListener("click", () => openJournalDialog(button.dataset.quick)));
-  viewContent.querySelector("[data-open-journal]").addEventListener("click", () => {
-    currentView = "journal";
-    document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item.dataset.view === "journal"));
-    window.scrollTo(0, 0);
-    render();
-  });
+  viewContent.querySelector("[data-open-journal]").addEventListener("click", () => navigateTo("journal"));
   viewContent.querySelectorAll("[data-stage]").forEach((button) => button.addEventListener("click", () => changeStage(button.dataset.stage)));
   viewContent.querySelector("[data-finish-grow]").addEventListener("click", finishGrow);
 }
@@ -291,28 +289,33 @@ function field(section, key, label, value, options = {}) {
   return `<label class="${options.wide ? "wide" : ""}"><span>${html(label)}</span><input name="${name}" type="${options.type || "text"}" value="${html(value)}" ${options.min != null ? `min="${options.min}"` : ""} ${options.step ? `step="${options.step}"` : ""}></label>`;
 }
 
+function optionRows(choices, selected) {
+  return choices.map(([value, label]) => `<option value="${html(value)}" ${value === selected ? "selected" : ""}>${html(label)}</option>`).join("");
+}
+
 function renderSetup() {
   const modules = [
-    ["overview", "Kurulum özeti", "Alan, yöntem ve ışık"],
-    ["plants", "Bitkiler", `${plantOptions().length} tür`],
+    ["overview", "Alan ve ışık", "Yöntem, medya ve armatür"],
+    ["plants", "Bitki kütüphanesi", `${plantOptions().length} tür`],
     ["profiles", "Profiller", "6 aşama"],
     ["nutrients", "Besinler", `${state.hardware?.dosing_fluids?.length || 0} sıvı`],
     ["hardware", "Donanım", `${state.hardware?.device_assignments?.length || 0} I²C cihazı`],
     ["dosing", "Dozaj", "Pompa ve kalibrasyon"],
   ];
   const descriptions = {
-    overview: ["YETİŞTİRME BAĞLAMI", "Fiziksel alanı, yöntemi ve ışığı bir kez tanımlayın."],
-    plants: ["BİTKİ KÜTÜPHANESİ", "Türleri, genetikleri ve bitkiye özel düzenlenebilir örnek hedefleri yönetin."],
-    profiles: ["GENEL PROFİLLER", "Bitkiye özel profil yoksa kullanılacak altı aşamalı başlangıç hedefleri."],
-    nutrients: ["BESİN KATALOĞU", "Kullandığınız ürünleri tanımlayın; pompa eşlemesi Dozaj bölümünde yapılır."],
-    hardware: ["YEREL DONANIM", "Raspberry Pi I²C aygıtlarını ve sürücülerini görün ve tanımlayın."],
-    dosing: ["DOZAJ KURULUMU", "Sıvı–pompa eşlemesi, ölçülmüş kalibrasyon ve emniyet sınırları."],
+    overview: ["SİSTEM", "Yetiştirme alanını, yöntemi, medyayı ve gerçek ışık armatürünü tanımlayın."],
+    plants: ["KÜTÜPHANE", "Türleri, genetikleri ve bitkiye özel düzenlenebilir örnek hedefleri yönetin."],
+    profiles: ["KÜTÜPHANE", "Bitkiye özel profil yoksa kullanılacak altı aşamalı başlangıç hedeflerini yönetin."],
+    nutrients: ["KÜTÜPHANE", "Kullandığınız ürünleri tanımlayın; pompa bağlantısını Dozaj bölümünde yapın."],
+    hardware: ["SİSTEM", "Raspberry Pi I²C aygıtlarını ve yerel ağ cihazlarını bulun ve tanımlayın."],
+    dosing: ["SİSTEM", "Sıvı–pompa eşlemesini, ölçülmüş kalibrasyonu ve emniyet sınırlarını yönetin."],
   };
-  const [kicker, description] = descriptions[currentSetupView] || descriptions.overview;
+  const [group, description] = descriptions[currentSetupView] || descriptions.overview;
   const title = modules.find(([module]) => module === currentSetupView)?.[1] || "Kurulum";
+  viewKicker.textContent = group;
   viewTitle.textContent = title;
-  viewContent.innerHTML = `<section class="setup-intro"><div><span class="kicker">${kicker}</span><h2>${html(title)}</h2><p>${html(description)}</p></div>
-      <span class="storage-badge">SQLITE ${html(state.storage.sqlite_integrity).toUpperCase()} · ${html(state.storage.revision_count)} REVİZYON</span></section>
+  document.title = `${title} · GrowAsist`;
+  viewContent.innerHTML = `<section class="setup-context"><p>${html(description)}</p><span class="storage-badge">SQLITE ${html(state.storage.sqlite_integrity).toUpperCase()} · ${html(state.storage.revision_count)} REVİZYON</span></section>
     <nav class="setup-modules" aria-label="Kurulum bölümleri">${modules.map(([module, label, detail]) => `<button type="button" class="setup-module ${module === currentSetupView ? "active" : ""}" data-setup-view="${module}"><b>${html(label)}</b><small>${html(detail)}</small></button>`).join("")}</nav>
     <div data-setup-panel></div>`;
   viewContent.querySelectorAll("[data-setup-view]").forEach((button) => button.addEventListener("click", () => {
@@ -332,8 +335,6 @@ function renderSetupOverview(panel) {
   const area = profile.cabin || {};
   const system = profile.system || {};
   const light = profile.lighting || {};
-  const methods = [["RDWC","RDWC"],["DWC","DWC"],["NFT","NFT"],["Ebb and Flow","Ebb & Flow"],["Drip","Damla sulama"],["Aeroponics","Aeroponik"],["Kratky","Kratky"],["Coco","Coco"],["Soil","Toprak"]];
-  const media = [["","Seçin"],["Expanded clay","Kil bilyesi"],["Rockwool","Taş yünü"],["Coco coir","Coco coir"],["Perlite","Perlit"],["Soil","Toprak"],["Water only","Yalnız su"],["Mixed","Karışım"]];
   panel.innerHTML = `<form data-setup-form>
     <section class="setup-section"><header><h3>Yetiştirme alanı</h3><p>Bitkinin gerçekten kullandığı fiziksel ölçüler.</p></header><div class="field-grid">
       ${field("cabin","width_cm","Genişlik · cm",area.width_cm,{type:"number",min:0,step:"0.1"})}
@@ -342,8 +343,8 @@ function renderSetupOverview(panel) {
       ${field("system","plant_capacity","Bitki kapasitesi",system.plant_capacity,{type:"number",min:1})}
     </div></section>
     <section class="setup-section"><header><h3>Yöntem ve medya</h3><p>Köklerin içinde bulunduğu sistem ve fiziksel ortam.</p></header><div class="field-grid">
-      ${field("system","growing_method","Yetiştirme yöntemi",system.growing_method,{choices:methods})}
-      ${field("system","growing_medium","Yetiştirme medyası",system.growing_medium,{choices:media})}
+      ${field("system","growing_method","Yetiştirme yöntemi",system.growing_method,{choices:cultivationMethods})}
+      ${field("system","growing_medium","Yetiştirme medyası",system.growing_medium,{choices:growingMedia})}
       ${field("system","reservoir_volume_l","Rezervuar · L",system.reservoir_volume_l,{type:"number",min:0,step:"0.1"})}
       ${field("system","system_volume_l","Toplam çözelti · L",system.system_volume_l,{type:"number",min:0,step:"0.1"})}
     </div></section>
@@ -466,9 +467,19 @@ function fluidLabel(fluid) {
   return categories[fluid.category] || fluid.category || "Diğer";
 }
 
+function fluidPhaseLabel(value) {
+  const labels = { all: "Tüm aşamalar", germination: "Çimlenme", early_veg: "Erken gelişim", veg: "Gelişim", bloom: "Çiçeklenme", darkness: "Karanlık", harvest: "Hasat / Kurutma" };
+  return labels[value] || value || "Tüm aşamalar";
+}
+
+function fluidMediumLabel(value) {
+  const labels = { all: "Tüm medyalar", "hydro/coco": "Hidroponik / Coco", hydro: "Hidroponik", coco: "Coco", soil: "Toprak" };
+  return labels[value] || value || "Tüm medyalar";
+}
+
 function renderNutrients(panel) {
   const fluids = state.hardware?.dosing_fluids || [];
-  panel.innerHTML = `<div class="page-actions"><div><span class="kicker">${fluids.length} KAYITLI SIVI</span><p>Ürün tanımı burada; hangi pompaya bağlı olduğu Dozaj bölümünde tutulur.</p></div><button class="primary-button" type="button" data-add-fluid>Besin / sıvı ekle</button></div><div class="record-ledger">${fluids.map((fluid) => `<button type="button" class="record-row" data-fluid-id="${html(fluid.id)}"><span class="record-code">${html(fluid.required ? "pH" : "N")}</span><span><b>${html(fluid.name)}</b><small>${html(fluid.brand || "Belirtilmedi")} · ${html(fluid.line || fluid.part || "Seri belirtilmedi")}</small></span><span>${html(fluidLabel(fluid))}</span><small>${html(fluid.phase || "tüm aşamalar")} · ${html(fluid.medium || "tüm medyalar")}</small><em>Düzenle</em></button>`).join("")}</div>`;
+  panel.innerHTML = `<div class="page-actions"><div><span class="kicker">${fluids.length} KAYITLI SIVI</span><p>Ürün tanımı burada; hangi pompaya bağlı olduğu Dozaj bölümünde tutulur.</p></div><button class="primary-button" type="button" data-add-fluid>Besin / sıvı ekle</button></div><div class="record-ledger">${fluids.map((fluid) => `<button type="button" class="record-row" data-fluid-id="${html(fluid.id)}"><span class="record-code">${html(fluid.required ? "pH" : "N")}</span><span><b>${html(fluid.name)}</b><small>${html(fluid.brand || "Belirtilmedi")} · ${html(fluid.line || fluid.part || "Seri belirtilmedi")}</small></span><span>${html(fluidLabel(fluid))}</span><small>${html(fluidPhaseLabel(fluid.phase))} · ${html(fluidMediumLabel(fluid.medium))}</small><em>Düzenle</em></button>`).join("")}</div>`;
   panel.querySelector("[data-add-fluid]").addEventListener("click", () => openFluidDialog());
   panel.querySelectorAll("[data-fluid-id]").forEach((button) => button.addEventListener("click", () => openFluidDialog(fluids.find((item) => item.id === button.dataset.fluidId))));
 }
@@ -633,12 +644,14 @@ function plantOptions() {
 function openStartDialog() {
   const plants = plantOptions();
   const today = localDate();
+  const system = state.system_profile?.system || {};
+  const nutrientFluids = (state.hardware?.dosing_fluids || []).filter((item) => !item.required && !["ph","ph_up","ph_down"].includes(item.category));
   openDialog({
     kicker: "YENİ YETİŞTİRME",
     title: "Kalıcı kaydı başlat",
     submitLabel: "Yetiştirmeyi başlat",
-    body: `<p class="dialog-note">Bitki profili ve mevcut kurulum bu yetiştirmeye kopyalanır. Sonraki değişiklikler geçmiş kaydı yeniden yazmaz.</p>
-      <div class="dialog-grid">
+    body: `<p class="dialog-note">Seçtiğiniz bitki, profil, besinler ve mevcut sistem kurulumu bu yetiştirmeye kopyalanır. Kütüphanede daha sonra yaptığınız değişiklikler geçmiş kaydı değiştirmez.</p>
+      <section class="start-section"><header><span>1</span><div><b>Bitki kimliği</b><small>Tür, çeşit ve kaynağı tek kayıtta tutun.</small></div></header><div class="dialog-grid">
         <label class="full"><span>Yetiştirme adı</span><input name="name" placeholder="Örn. Kış yetiştirmesi" required></label>
         <label><span>Bitki türü</span><select name="plant_profile_id" data-plant-select>${plants.map((plant) => `<option value="${html(plant.id)}">${html(plant.name)}</option>`).join("")}<option value="">Diğer / kendi bitkim</option></select></label>
         <label data-custom-plant hidden><span>Bitkinin adı</span><input name="plant_species" maxlength="96" placeholder="Tür veya yaygın adı"></label>
@@ -647,14 +660,19 @@ function openStartDialog() {
         <label data-cannabis-only hidden><span>Kütüphanedeki çeşit</span><select name="cultivar_id" data-cultivar><option value="">Özel / seçilmedi</option></select></label>
         <label><span>Çeşit / cultivar</span><input name="cultivar" placeholder="Seçili değilse yazabilirsiniz"></label>
         <label><span>Satın alma kaynağı</span><input name="source" placeholder="Mağaza, paket veya parti"></label>
-        <label><span>Yetiştirme yöntemi</span><select name="growing_method"><option>RDWC</option><option>DWC</option><option>NFT</option><option>Drip</option><option>Coco</option><option>Soil</option></select></label>
-        <label><span>Yetiştirme medyası</span><select name="growing_medium"><option value="">Seçin</option><option>Expanded clay</option><option>Rockwool</option><option>Coco coir</option><option>Perlite</option><option>Soil</option><option>Water only</option><option>Mixed</option></select></label>
+      </div></section>
+      <section class="start-section"><header><span>2</span><div><b>Başlangıç ve profil</b><small>Sistem kurulumu varsayılan gelir; bu yetiştirmeye özel değiştirilebilir.</small></div></header><div class="dialog-grid">
+        <label><span>Yetiştirme yöntemi</span><select name="growing_method">${optionRows(cultivationMethods, system.growing_method || "RDWC")}</select></label>
+        <label><span>Yetiştirme medyası</span><select name="growing_medium">${optionRows(growingMedia, system.growing_medium || "")}</select></label>
         <label><span>Başlangıç tarihi</span><input name="start_date" type="date" max="${today}" value="${today}" required></label>
         <label><span>İlk aşama</span><select name="initial_stage" data-initial-stage></select></label>
         <div class="profile-preview full" data-profile-preview></div>
-        <label class="full"><span>Besin programı</span><input name="nutrient_program" placeholder="Kullandığınız seri veya program"></label>
-        <label class="full"><span>Başlangıç notu</span><textarea name="notes" placeholder="Başlangıç koşulları, hedef veya önemli bir ayrıntı"></textarea></label>
-      </div>`,
+      </div></section>
+      <section class="start-section"><header><span>3</span><div><b>Besin programı</b><small>Katalogdan seçilen ürünler yetiştirme kaydına kalıcı olarak kopyalanır.</small></div></header><div class="dialog-grid">
+        <label class="full"><span>Program / seri adı</span><input name="nutrient_program" placeholder="Örn. Cali Pro Bloom"></label>
+        ${nutrientFluids.length ? `<fieldset class="fluid-checks full start-fluid-list"><legend>Kullanılacak ürünler</legend>${nutrientFluids.map((fluid) => `<label><input type="checkbox" name="nutrient_ids" value="${html(fluid.id)}" data-start-nutrient> <span>${html(fluid.name)}<small>${html(fluid.brand || "Marka belirtilmedi")}</small></span></label>`).join("")}</fieldset>` : '<p class="empty-list full">Besin kataloğunda seçilebilir ürün yok. Önce Kütüphane → Besinler bölümüne ürün ekleyin.</p>'}
+      </div></section>
+      <section class="start-section"><header><span>4</span><div><b>Başlangıç notu</b><small>Bu not ilk günlük kaydının kalıcı bağlamına eklenir.</small></div></header><div class="dialog-grid"><label class="full"><span>Not</span><textarea name="notes" placeholder="Başlangıç koşulları, hedef veya önemli bir ayrıntı"></textarea></label></div></section>`,
     onSubmit: submitStartGrow,
   });
   const plantSelect = dialogBody.querySelector("[data-plant-select]");
@@ -696,10 +714,17 @@ function updateStartProfilePreview() {
   if (!preview) return;
   if (!target) {
     preview.innerHTML = `<span><b>Özel bitki şablonu</b><small>Başlangıç hedefleri daha sonra Bitki Kütüphanesi bölümünden düzenlenebilecek.</small></span>`;
+    updateStartNutrientSelection(stage, target);
     return;
   }
   preview.innerHTML = `<span><b>${html(state.stage_labels[stage] || stage)} · ${html(target.planned_days)} gün</b><small>Düzenlenebilir örnek profil; evrensel yetiştirme reçetesi değildir.</small></span>
     <dl><div><dt>Işık</dt><dd>${html(target.photoperiod)} sa · %${html(target.light_intensity)}</dd></div><div><dt>Ortam</dt><dd>${html(target.day_temperature)} °C · %${html(target.humidity)}</dd></div><div><dt>Kök bölgesi</dt><dd>pH ${html(target.ph_min)}–${html(target.ph_max)} · EC ${html(target.ec_min)}–${html(target.ec_max)}</dd></div></dl>`;
+  updateStartNutrientSelection(stage, target);
+}
+
+function updateStartNutrientSelection(stage, target) {
+  const suggested = target?.nutrient_ids?.length ? target.nutrient_ids : (state.profiles?.[stage]?.nutrient_ids || []);
+  dialogBody.querySelectorAll("[data-start-nutrient]").forEach((input) => { input.checked = suggested.includes(input.value); });
 }
 
 function updateCultivarOptions() {
@@ -717,6 +742,7 @@ async function submitStartGrow(formData) {
   const cultivarId = String(formData.get("cultivar_id") || "");
   const cultivar = (plant?.cultivars || []).find((item) => item.id === cultivarId);
   const payload = Object.fromEntries(formData.entries());
+  payload.nutrient_ids = formData.getAll("nutrient_ids");
   payload.plant_count = Number(payload.plant_count || 1);
   payload.cultivation_id = id();
   if (cultivar) {

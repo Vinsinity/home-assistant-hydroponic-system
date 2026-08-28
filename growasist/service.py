@@ -260,6 +260,28 @@ class GrowAsistService:
                 or system.get("system", {}).get("growing_medium")
                 or ""
             )[:96]
+            fluid_records = {
+                str(item.get("id")): item
+                for item in state.get("hardware", {}).get("dosing_fluids", [])
+                if isinstance(item, dict)
+                and item.get("id")
+                and not item.get("required")
+                and item.get("category") not in {"ph", "ph_up", "ph_down"}
+            }
+            requested_nutrients = payload.get("nutrient_ids", [])
+            if not isinstance(requested_nutrients, list):
+                raise ValueError("Besin ürünleri liste olarak gönderilmelidir")
+            nutrient_ids = list(dict.fromkeys(
+                str(item) for item in requested_nutrients if isinstance(item, str)
+            ))
+            unknown_nutrients = [item for item in nutrient_ids if item not in fluid_records]
+            if unknown_nutrients:
+                raise ValueError("Seçilen besin ürünü katalogda bulunamadı")
+            nutrient_products = [deepcopy(fluid_records[item]) for item in nutrient_ids]
+            nutrient_program = str(
+                payload.get("nutrient_program")
+                or " · ".join(str(item.get("name") or "") for item in nutrient_products)
+            )[:160]
             identity = {
                 "plant_profile_id": selected_plant["id"],
                 "plant_species": selected_plant["name"],
@@ -276,7 +298,7 @@ class GrowAsistService:
                     system.get("system", {}).get("system_volume_l", 0),
                 ),
                 "photoperiod": "profile",
-                "nutrient_program": str(payload.get("nutrient_program") or "")[:160],
+                "nutrient_program": nutrient_program,
                 "notes": str(payload.get("notes") or "")[:4000],
                 **genetics_identity,
             }
@@ -296,9 +318,9 @@ class GrowAsistService:
                 ),
                 genetics_snapshot=genetics_snapshot,
                 nutrient_program_snapshot={
-                    "name": identity["nutrient_program"],
-                    "nutrient_ids": [],
-                    "products": [],
+                    "name": nutrient_program,
+                    "nutrient_ids": nutrient_ids,
+                    "products": nutrient_products,
                     "source": "standalone_grow_start",
                 },
                 initial_stage=str(payload.get("initial_stage") or "") or None,

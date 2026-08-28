@@ -36,7 +36,7 @@ discard cultivation records or events.
 ## Runtime layout
 
 ```text
-Browser (Today / Journal / Setup)
+Browser (Overview / Journal / Library / System)
   │
   ▼
 GrowAsist local API and web panel

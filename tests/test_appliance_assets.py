@@ -76,10 +76,13 @@ def test_image_contains_release_and_sync_dependencies() -> None:
 def test_setup_tools_remain_visible_and_addressable() -> None:
     shell = _text("growasist/web/index.html")
     application = _text("growasist/web/app.js")
-    for module in ("plants", "profiles", "nutrients", "hardware", "dosing"):
+    for module in ("overview", "plants", "profiles", "nutrients", "hardware", "dosing"):
         assert f'data-setup-shortcut="{module}"' in shell
         assert f'"{module}"' in application
     assert "#setup/${setupView || currentSetupView}" in application
+    assert "KÜTÜPHANE" in shell
+    assert "SİSTEM" in shell
+    assert "Genel Bakış" in shell
 
 
 def test_operational_scripts_are_executable() -> None:

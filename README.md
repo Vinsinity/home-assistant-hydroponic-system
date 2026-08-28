@@ -8,18 +8,18 @@ Assistant integration retained as a compatible adapter during migration.
 The repository now includes a usable Home Assistant-independent product slice:
 
 - `growasist serve` starts the authenticated local web panel and API;
-- the **Today** workspace starts and tracks a cultivation from the persistent
+- the **Overview** workspace starts and tracks a cultivation from the persistent
   Plant Library, including custom plant species and the versioned Cannabis
   cultivar catalog;
 - the grow-start flow snapshots plant/genetics, editable example targets,
-  method, growing medium, light fixture context, and nutrient-program name;
+  method, growing medium, light fixture context, and the selected nutrient
+  program/products;
 - the append-only **Journal** records water, nutrients, pH, reservoir work,
   maintenance, calibration, stage changes, and notes without exposing update or
   delete operations;
-- **Setup** keeps the daily navigation compact while exposing dedicated nested
-  workspaces for the Plant Library, six editable stage profiles, nutrient
-  catalog, native I²C hardware, and dosing/pump calibration alongside physical
-  grow area, method/media, solution volumes, and fixture identity;
+- the sidebar separates daily cultivation work from reusable **Library** records
+  and physical **System** setup. Plant Library, stage profiles, nutrients, area
+  and light, native I²C/network hardware, and dosing each keep a stable route;
 - nutrient-product identity, physical hardware, and pump/fluid mapping remain
   separate records, and saving any of them never enables equipment control;
 - SQLite WAL storage keeps immutable journal events and full state revisions;
@@ -39,7 +39,7 @@ control remains disabled in this slice.
 
 On the Raspberry Pi appliance, open `http://<raspberry-pi-ip>` and enter the
 first-boot token. Container development remains on port `8080`. Home Assistant
-is not required by this runtime. Setup → Hardware now performs read-only
+is not required by this runtime. System → Hardware now performs read-only
 Shelly, TP-Link/Tapo, Tuya-candidate, and SSDP discovery and requires explicit
 user enrolment into the device registry. Authentication, monitoring, and
 equipment control remain disabled until each native adapter and the

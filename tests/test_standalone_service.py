@@ -162,6 +162,29 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
     assert restarted["engine_enabled"] is False
 
 
+def test_grow_start_snapshots_selected_nutrient_products(tmp_path):
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    service.update_hardware({
+        "dosing_fluids": [
+            {"id": "ph_up", "name": "pH+", "category": "ph"},
+            {"id": "ph_down", "name": "pH-", "category": "ph"},
+            {"id": "bloom_a", "name": "Bloom A", "brand": "Test", "category": "base"},
+            {"id": "calmag", "name": "Cal-Mag", "brand": "Test", "category": "supplement"},
+        ]
+    })
+
+    cultivation = service.start_cultivation(_start_payload(
+        nutrient_program="Bloom programı",
+        nutrient_ids=["bloom_a", "calmag"],
+    ))
+
+    snapshot = cultivation["nutrient_program_snapshot"]
+    assert snapshot["name"] == "Bloom programı"
+    assert snapshot["nutrient_ids"] == ["bloom_a", "calmag"]
+    assert [item["name"] for item in snapshot["products"]] == ["Bloom A", "Cal-Mag"]
+    assert service.bootstrap()["engine_enabled"] is False
+
+
 def test_cannabis_requires_growth_type_when_no_catalog_cultivar_is_selected(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
 

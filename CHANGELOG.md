@@ -8,13 +8,14 @@
   event rows, immutable state revisions, checksum validation, and online backup.
 - Add checksummed Home Assistant journal import that merges historical records
   and events instead of replacing them.
-- Add an authenticated, responsive standalone web panel with focused Today,
-  Journal, and Setup workspaces and no Home Assistant frontend components.
-- Keep Plant Library, profiles, nutrients, hardware, and dosing visible as
-  persistent Setup shortcuts on desktop and give every module a stable
-  `#setup/...` route that survives refresh and browser navigation.
+- Add an authenticated, responsive standalone web panel with focused Overview,
+  Journal, Library, and System workspaces and no Home Assistant frontend components.
+- Replace duplicated Setup navigation with one ownership-based hierarchy:
+  cultivation work, reusable Library records, and physical System setup.
+  Preserve stable `#setup/...` routes, with a compact module switcher only on
+  mobile where the full sidebar is unavailable.
 - Restore Plant Library, editable stage profiles, nutrient catalog, native I²C
-  hardware, and dosing/calibration as real nested Setup workspaces in the
+  hardware, and dosing/calibration as first-class routed workspaces in the
   standalone panel; all remain configuration-only while control is disabled.
 - Add bounded, read-only LAN discovery for Shelly mDNS/RPC, TP-Link/Tapo UDP,
   Tuya candidates, and SSDP; require an explicit name and grow-system role
@@ -27,6 +28,9 @@
   journal events.
 - Snapshot the selected Plant Library profile, Cannabis genetics, method,
   growing medium, fixture context, and nutrient-program name at grow start.
+- Let grow start select real catalog nutrient products, suggest the active
+  stage profile's products, and snapshot their complete identities into the
+  immutable cultivation record.
 - Validate the complete browser flow on desktop and mobile while keeping all
   automatic equipment control disabled.
 - Add a reproducible Raspberry Pi 5 appliance image based on Raspberry Pi OS
