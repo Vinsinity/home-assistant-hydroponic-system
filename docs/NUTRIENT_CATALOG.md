@@ -5,7 +5,8 @@ from `hardware.dosing_fluids`, which is the user's selected product list. A
 catalogue update cannot remove a selected product or rewrite a cultivation
 snapshot.
 
-Catalogue version `2026.08.28.2` contains 367 products from 20 manufacturers:
+Catalogue version `2026.08.28.3` contains 367 products from 20 manufacturers
+and 79 reusable product-set profiles:
 
 | Manufacturer | Products | Official source |
 | --- | ---: | --- |
@@ -30,12 +31,23 @@ Catalogue version `2026.08.28.2` contains 367 products from 20 manufacturers:
 | FloraFlex | 6 | <https://www.floraflex.com/dry-nutrients> |
 | Cyco | 16 | <https://cycoflower.com/brochure/CYCO-brochure-english.pdf> |
 
-Each record stores brand, line, product/part identity, category, growth phase,
+Each product record stores brand, line, product/part identity, category, growth phase,
 compatible medium, physical form, input type, a short purpose, official source,
 and verification date. NPK is populated only when the manufacturer publishes an
 unambiguous value. Labels and guaranteed analyses can vary by country; the
 physical product label and current manufacturer feed chart remain authoritative.
 
-Automatic dosing never follows catalogue text. A product must first be copied
-into the user's list, assigned to a plant and stage, mapped to a physical pump,
-and calibrated. The automatic control engine remains disabled.
+Program profiles group the line's base products, separate known medium or water
+alternatives, and map product phase labels to GrowAsist stages. Compatible
+manufacturer supplements are offered only as an optional expanded set. These
+profiles are not official dose schedules and contain no ml/L, EC, or ppm rate.
+
+At grow start, the selected program is filtered by the configured hydroponic,
+coco, or soil environment. Its selected products are copied into the user's
+local list and the catalogue version, product identities, and stage map are
+snapshotted into the cultivation record. Later catalogue changes therefore
+cannot rewrite grow history.
+
+Automatic dosing never follows catalogue text. A product still has to be mapped
+to a physical pump and calibrated. Any future automatic application must also
+pass deterministic safety rules; the automatic control engine remains disabled.

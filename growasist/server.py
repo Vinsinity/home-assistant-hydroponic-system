@@ -155,6 +155,7 @@ def build_handler(
                     "/api/v1/profiles": application.update_profile,
                     "/api/v1/plants": application.update_plant,
                     "/api/v1/nutrients/catalog/add": application.add_catalog_nutrient,
+                    "/api/v1/nutrient-programs/add": application.add_nutrient_program,
                     "/api/v1/hardware": application.update_hardware,
                     "/api/v1/i2c/discover": application.discover_i2c,
                     "/api/v1/i2c/enroll": application.enroll_i2c_device,

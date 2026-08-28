@@ -13,9 +13,15 @@ import re
 from typing import Any
 
 
-NUTRIENT_CATALOG_SCHEMA_VERSION = 1
-NUTRIENT_CATALOG_VERSION = "2026.08.28.2"
+NUTRIENT_CATALOG_SCHEMA_VERSION = 2
+NUTRIENT_CATALOG_VERSION = "2026.08.28.3"
 NUTRIENT_CATALOG_VERIFIED_ON = "2026-08-28"
+
+_PROGRAM_STAGES = ("germination", "early_veg", "veg", "bloom", "darkness", "harvest")
+_HYDRO_METHODS = {
+    "rdwc", "dwc", "nft", "ebb and flow", "ebb & flow", "drip",
+    "aeroponics", "aeroponic", "kratky", "hydroponic", "hydro",
+}
 
 _SLUG = re.compile(r"[^a-z0-9]+")
 
@@ -458,6 +464,200 @@ def _description(name: str, category: str, phase: str, medium: str) -> str:
     return f"{name}; üretici tarafından {phase_text} için sunulan {category_text}. Uyum: {medium_text}."
 
 
+def nutrient_environment(growing_method: Any, growing_medium: Any) -> str:
+    """Map the user's cultivation setup to one stable nutrient environment."""
+    method = str(growing_method or "").strip().casefold()
+    medium = str(growing_medium or "").strip().casefold()
+    if "coco" in method or "coco" in medium:
+        return "coco"
+    if "soil" in method or "toprak" in method or "soil" in medium or "toprak" in medium:
+        return "soil"
+    if method in _HYDRO_METHODS or any(
+        marker in medium
+        for marker in ("water", "su", "clay", "kil", "rockwool", "taş yünü", "perlite", "perlit")
+    ):
+        return "hydro"
+    return "universal"
+
+
+def program_matches_environment(
+    program: dict[str, Any], growing_method: Any, growing_medium: Any
+) -> bool:
+    """Return whether a catalogue program can be suggested for the setup."""
+    environment = nutrient_environment(growing_method, growing_medium)
+    supported = program.get("supported_environments", [])
+    return "universal" in supported or environment == "universal" or environment in supported
+
+
+def _medium_class(value: str) -> str:
+    return {
+        "all": "universal",
+        "hydro/coco": "hydro_coco",
+        "hydro": "hydro",
+        "coco": "coco",
+        "soil": "soil",
+    }.get(value, "universal")
+
+
+def _supported_environments(medium_class: str) -> list[str]:
+    return {
+        "universal": ["universal"],
+        "hydro_coco": ["hydro", "coco"],
+        "hydro": ["hydro"],
+        "coco": ["coco"],
+        "soil": ["soil"],
+    }[medium_class]
+
+
+def _phase_product_ids(products: list[dict[str, Any]], stage: str) -> list[str]:
+    phases = {
+        "germination": {"germination"},
+        "early_veg": {"all", "early_veg", "veg"},
+        "veg": {"all", "veg"},
+        "bloom": {"all", "bloom"},
+        "darkness": set(),
+        "harvest": {"harvest"},
+    }[stage]
+    return [item["id"] for item in products if item.get("phase") in phases]
+
+
+def _program_variants(
+    brand_id: str, line: str, base_products: list[dict[str, Any]]
+) -> list[tuple[str, str, list[dict[str, Any]], str]]:
+    """Split product alternatives that share one manufacturer line."""
+    by_name = {item["name"]: item for item in base_products}
+    explicit: dict[tuple[str, str], tuple[tuple[str, str, tuple[str, ...], str], ...]] = {
+        ("general_hydroponics", "FloraSeries"): (
+            ("soft_water", "Soft / normal water", ("FloraGro", "FloraMicro", "FloraBloom"), "universal"),
+            ("hard_water", "Hard water", ("FloraGro", "FloraMicro Hardwater", "FloraBloom"), "hydro_coco"),
+        ),
+        ("terra_aquatica", "TriPart"): (
+            ("soft_water", "Soft water", ("TriPart Grow", "TriPart Micro Soft Water", "TriPart Bloom"), "universal"),
+            ("hard_water", "Hard water", ("TriPart Grow", "TriPart Micro Hard Water", "TriPart Bloom"), "universal"),
+        ),
+        ("terra_aquatica", "DualPart"): (
+            ("soft_water", "Soft water", ("DualPart Grow Soft Water", "DualPart Bloom"), "universal"),
+            ("hard_water", "Hard water", ("DualPart Grow Hard Water", "DualPart Bloom"), "universal"),
+        ),
+        ("dutchpro", "Original"): (
+            ("soil_hard", "Soil · hard water", ("Grow Soil Hard Water A", "Grow Soil Hard Water B", "Bloom Soil Hard Water A", "Bloom Soil Hard Water B"), "soil"),
+            ("soil_soft", "Soil · RO/soft water", ("Grow Soil RO/Soft Water A", "Grow Soil RO/Soft Water B", "Bloom Soil RO/Soft Water A", "Bloom Soil RO/Soft Water B"), "soil"),
+            ("hydro_hard", "Hydro/Coco · hard water", ("Grow Hydro/Coco Hard Water A", "Grow Hydro/Coco Hard Water B", "Bloom Hydro/Coco Hard Water A", "Bloom Hydro/Coco Hard Water B"), "hydro_coco"),
+            ("hydro_soft", "Hydro/Coco · RO/soft water", ("Grow Hydro/Coco RO/Soft Water A", "Grow Hydro/Coco RO/Soft Water B", "Bloom Hydro/Coco RO/Soft Water A", "Bloom Hydro/Coco RO/Soft Water B"), "hydro_coco"),
+        ),
+        ("green_house_feeding", "Mineral"): (
+            ("hybrids", "Hybrids", ("Hybrids",), "universal"),
+            ("short_flowering", "Grow + Short Flowering", ("Grow", "Short Flowering"), "universal"),
+            ("long_flowering", "Grow + Long Flowering", ("Grow", "Long Flowering"), "universal"),
+        ),
+        ("foxfarm", "Liquid Trio"): (
+            ("hydro", "Hydro", ("Grow Big Hydro Liquid Plant Food", "Tiger Bloom Liquid Plant Food"), "hydro"),
+            ("soil", "Soil", ("Grow Big Liquid Plant Food", "Big Bloom Liquid Plant Food", "Tiger Bloom Liquid Plant Food"), "soil"),
+        ),
+        ("botanicare", "Pure Blend Pro"): (
+            ("hydro_coco", "Hydro/Coco", ("Pure Blend Pro Grow", "Pure Blend Pro Bloom"), "hydro_coco"),
+            ("soil", "Soil", ("Pure Blend Pro Grow", "Pure Blend Pro Bloom Soil"), "soil"),
+        ),
+        ("house_and_garden", "Soil"): (
+            ("ab", "Soil A/B", ("Soil A", "Soil B"), "soil"),
+            ("bio_one_part", "Bio 1-Component", ("Bio 1-Component Soil",), "soil"),
+        ),
+    }
+    configured = explicit.get((brand_id, line))
+    if configured:
+        result = []
+        for suffix, label, names, medium_class in configured:
+            selected = [by_name[name] for name in names if name in by_name]
+            if selected:
+                result.append((suffix, label, selected, medium_class))
+        return result
+
+    if brand_id == "jacks_nutrients" and line == "FeED":
+        return [
+            (_id(item["name"]), item["name"], [item], _medium_class(item["medium"]))
+            for item in base_products
+        ]
+
+    shared = [item for item in base_products if item.get("medium") == "all"]
+    specific = sorted({item.get("medium") for item in base_products if item.get("medium") != "all"})
+    if not specific:
+        return [("standard", "", base_products, "universal")]
+    variants = []
+    for medium in specific:
+        selected_specific = [item for item in base_products if item.get("medium") == medium]
+        specific_parts = {item.get("part") for item in selected_specific if item.get("part")}
+        selected_shared = [item for item in shared if not item.get("part") or item.get("part") not in specific_parts]
+        variants.append((_id(str(medium)), "", selected_shared + selected_specific, _medium_class(str(medium))))
+    return variants
+
+
+def _build_programs(
+    brands: dict[str, dict[str, Any]], products: dict[str, dict[str, Any]]
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    programs: dict[str, dict[str, Any]] = {}
+    program_order: list[str] = []
+    for brand_id, brand in brands.items():
+        base_by_line: dict[str, list[dict[str, Any]]] = {}
+        brand_products = [products[item] for item in brand["product_ids"]]
+        for product in brand_products:
+            if product.get("category") == "base":
+                base_by_line.setdefault(str(product.get("line") or "Base"), []).append(product)
+        brand_program_ids: list[str] = []
+        for line, base_products in base_by_line.items():
+            for suffix, variant_label, core_products, medium_class in _program_variants(
+                brand_id, line, base_products
+            ):
+                program_id = _id(f"program {brand_id} {line} {suffix}")
+                supported = _supported_environments(medium_class)
+                optional_products = [
+                    item for item in brand_products
+                    if item.get("category") not in {"base", "ph"}
+                    and (
+                        item.get("medium") == "all"
+                        or _medium_class(str(item.get("medium"))) == medium_class
+                        or medium_class == "hydro_coco" and item.get("medium") in {"hydro", "coco", "hydro/coco"}
+                    )
+                ]
+                core_ids = [item["id"] for item in core_products]
+                optional_ids = [item["id"] for item in optional_products]
+                active_phases = {item.get("phase") for item in core_products}
+                complete_cycle = "all" in active_phases or ({"veg", "bloom"} <= active_phases)
+                if any("Part A" in item.get("name", "") for item in core_products) and not any(
+                    "Part B" in item.get("name", "") for item in core_products
+                ):
+                    complete_cycle = False
+                display_name = line + (f" · {variant_label}" if variant_label else "")
+                stages = {}
+                for stage in _PROGRAM_STAGES:
+                    stages[stage] = {
+                        "core_product_ids": _phase_product_ids(core_products, stage),
+                        "optional_product_ids": _phase_product_ids(optional_products, stage),
+                    }
+                programs[program_id] = {
+                    "id": program_id,
+                    "brand_id": brand_id,
+                    "brand": brand["name"],
+                    "name": display_name,
+                    "line": line,
+                    "variant": variant_label,
+                    "profile_kind": "catalog_product_profile",
+                    "medium_class": medium_class,
+                    "supported_environments": supported,
+                    "cycle_coverage": "complete" if complete_cycle else "stage_specific",
+                    "core_product_ids": core_ids,
+                    "optional_product_ids": optional_ids,
+                    "stages": stages,
+                    "dose_plan_included": False,
+                    "source_url": brand["website"],
+                    "verified_on": NUTRIENT_CATALOG_VERIFIED_ON,
+                    "disclaimer": "Ürün setidir; doz oranı değildir. Üretici çizelgesi, su ve bitki koşullarına göre doğrulanmalıdır.",
+                }
+                program_order.append(program_id)
+                brand_program_ids.append(program_id)
+        brand["program_ids"] = brand_program_ids
+    return programs, program_order
+
+
 def default_nutrient_catalog() -> dict[str, Any]:
     """Return a fresh, deterministic copy of the built-in manufacturer library."""
     brands: dict[str, dict[str, Any]] = {}
@@ -501,6 +701,7 @@ def default_nutrient_catalog() -> dict[str, Any]:
             "product_ids": product_ids,
             "verified_on": NUTRIENT_CATALOG_VERIFIED_ON,
         }
+    programs, program_order = _build_programs(brands, products)
     return deepcopy({
         "schema_version": NUTRIENT_CATALOG_SCHEMA_VERSION,
         "catalog_version": NUTRIENT_CATALOG_VERSION,
@@ -509,4 +710,6 @@ def default_nutrient_catalog() -> dict[str, Any]:
         "brands": brands,
         "product_order": product_order,
         "products": products,
+        "program_order": program_order,
+        "programs": programs,
     })

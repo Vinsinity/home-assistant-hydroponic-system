@@ -295,6 +295,66 @@ def test_official_catalog_product_is_added_once_and_keeps_details(tmp_path):
     assert service.bootstrap()["engine_enabled"] is False
 
 
+def test_catalog_program_adds_the_set_atomically_and_deduplicates(tmp_path):
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    catalog = service.bootstrap()["nutrient_catalog"]
+    program = next(
+        item for item in catalog["programs"].values()
+        if item["brand_id"] == "canna" and item["line"] == "CANNA AQUA"
+    )
+
+    first = service.add_nutrient_program({"program_id": program["id"], "scope": "core"})
+    second = service.add_nutrient_program({"program_id": program["id"], "scope": "core"})
+    local_catalog_ids = {
+        item.get("catalog_id") for item in service.bootstrap()["hardware"]["dosing_fluids"]
+    }
+
+    assert len(first["added"]) == len(program["core_product_ids"])
+    assert second["added"] == []
+    assert len(second["existing"]) == len(program["core_product_ids"])
+    assert set(program["core_product_ids"]) <= local_catalog_ids
+
+
+def test_grow_start_imports_and_snapshots_a_catalog_program(tmp_path):
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    catalog = service.bootstrap()["nutrient_catalog"]
+    program = next(
+        item for item in catalog["programs"].values()
+        if item["brand_id"] == "canna" and item["line"] == "CANNA AQUA"
+    )
+
+    cultivation = service.start_cultivation(_start_payload(
+        nutrient_program_id=program["id"],
+        nutrient_program_scope="core",
+        nutrient_program="",
+    ))
+    snapshot = cultivation["nutrient_program_snapshot"]
+
+    assert cultivation["identity"]["nutrient_program"] == program["name"]
+    assert snapshot["program_id"] == program["id"]
+    assert snapshot["brand"] == "CANNA"
+    assert snapshot["catalog_product_ids"] == program["core_product_ids"]
+    assert len(snapshot["products"]) == len(program["core_product_ids"])
+    assert snapshot["dose_plan_included"] is False
+    assert snapshot["catalog_version"] == catalog["catalog_version"]
+    assert snapshot["stages"]["veg"]["nutrient_ids"]
+
+
+def test_grow_start_rejects_a_program_for_the_wrong_environment(tmp_path):
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    catalog = service.bootstrap()["nutrient_catalog"]
+    soil_program = next(
+        item for item in catalog["programs"].values()
+        if item["brand_id"] == "canna" and item["line"] == "CANNA TERRA"
+    )
+
+    with pytest.raises(ValueError, match="ortamıyla uyumlu değil"):
+        service.start_cultivation(_start_payload(
+            nutrient_program_id=soil_program["id"],
+            nutrient_program_scope="core",
+        ))
+
+
 def test_grow_start_snapshots_selected_nutrient_products(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
     service.update_hardware({

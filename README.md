@@ -18,13 +18,18 @@ The repository now includes a usable Home Assistant-independent product slice:
   maintenance, calibration, stage changes, and notes without exposing update or
   delete operations;
 - the sidebar separates daily cultivation work from reusable **Library** records
-  and physical **System** setup. Plant-specific stage targets and product choices
-  live together in Plant Library; nutrients, area and light, hardware, and dosing
-  each keep a stable route;
+  and physical **System** setup. Plant Library owns crop-specific stage targets,
+  Nutrients owns reusable manufacturer programs/products, and **Dosing** is a
+  top-level cultivation operation rather than a setup module;
 - **Nutrients** includes a versioned built-in catalogue of 367 products across
-  20 major manufacturers, with brand/product search, line/part, phase, medium,
-  form, known NPK, short purpose, verification date, and official source. A
-  product is copied into the user's own library only after explicit selection;
+  20 major manufacturers plus 79 product-set profiles. The program picker
+  separates water/medium variants, filters by hydroponic, coco, or soil setup,
+  and copies either the core set or an explicitly selected expanded set into the
+  user's library in one atomic operation;
+- selecting a nutrient program at grow start copies its product identities and
+  stage map into an immutable cultivation snapshot. Product-set profiles do not
+  invent feed rates; current manufacturer charts and actual plant/water
+  conditions remain authoritative;
 - nutrient-product identity, physical hardware, and pump/fluid mapping remain
   separate records, and saving any of them never enables equipment control;
 - SQLite WAL storage keeps immutable journal events and full state revisions;

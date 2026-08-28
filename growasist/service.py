@@ -30,6 +30,9 @@ from custom_components.hydroponic_system.journal import (
     start_cultivation,
     utc_now,
 )
+from custom_components.hydroponic_system.nutrient_catalog import (
+    program_matches_environment,
+)
 from custom_components.hydroponic_system.plant_catalog import (
     cultivation_plant_snapshot,
     make_custom_plant_record,
@@ -307,6 +310,30 @@ class GrowAsistService:
                 or system.get("system", {}).get("growing_medium")
                 or ""
             )[:96]
+            catalog = state.get("nutrient_catalog", {})
+            selected_program_id = _text(payload.get("nutrient_program_id"), 128)
+            selected_program = catalog.get("programs", {}).get(selected_program_id)
+            program_scope = _text(
+                payload.get("nutrient_program_scope"), 16, "core"
+            ).casefold()
+            if program_scope not in {"core", "complete"}:
+                raise ValueError("Besin programı kapsamı core veya complete olmalıdır")
+            if selected_program_id and not isinstance(selected_program, dict):
+                raise ValueError("Seçilen besin programı bulunamadı")
+            if selected_program and not program_matches_environment(
+                selected_program, growing_method, growing_medium
+            ):
+                raise ValueError("Seçilen besin programı yetiştirme ortamıyla uyumlu değil")
+
+            selected_catalog_ids: list[str] = []
+            if selected_program:
+                selected_catalog_ids.extend(selected_program.get("core_product_ids", []))
+                if program_scope == "complete":
+                    selected_catalog_ids.extend(selected_program.get("optional_product_ids", []))
+                selected_catalog_ids = list(dict.fromkeys(selected_catalog_ids))
+                for catalog_id in selected_catalog_ids:
+                    self._ensure_catalog_fluid(state, str(catalog_id))
+
             fluid_records = {
                 str(item.get("id")): item
                 for item in state.get("hardware", {}).get("dosing_fluids", [])
@@ -318,17 +345,56 @@ class GrowAsistService:
             requested_nutrients = payload.get("nutrient_ids", [])
             if not isinstance(requested_nutrients, list):
                 raise ValueError("Besin ürünleri liste olarak gönderilmelidir")
-            nutrient_ids = list(dict.fromkeys(
-                str(item) for item in requested_nutrients if isinstance(item, str)
-            ))
+            if selected_program:
+                local_id_by_catalog = {
+                    str(item.get("catalog_id")): local_id
+                    for local_id, item in fluid_records.items()
+                    if item.get("catalog_id")
+                }
+                nutrient_ids = [
+                    local_id_by_catalog[catalog_id]
+                    for catalog_id in selected_catalog_ids
+                    if catalog_id in local_id_by_catalog
+                ]
+            else:
+                nutrient_ids = list(dict.fromkeys(
+                    str(item) for item in requested_nutrients if isinstance(item, str)
+                ))
             unknown_nutrients = [item for item in nutrient_ids if item not in fluid_records]
             if unknown_nutrients:
                 raise ValueError("Seçilen besin ürünü katalogda bulunamadı")
             nutrient_products = [deepcopy(fluid_records[item]) for item in nutrient_ids]
+            catalog_program_name = (
+                str(selected_program.get("name") or "") if selected_program else ""
+            )
             nutrient_program = str(
-                payload.get("nutrient_program")
+                catalog_program_name
+                or payload.get("nutrient_program")
                 or " · ".join(str(item.get("name") or "") for item in nutrient_products)
             )[:160]
+            stage_snapshot: dict[str, dict[str, list[str]]] = {}
+            if selected_program:
+                local_by_catalog = {
+                    str(item.get("catalog_id")): str(item.get("id"))
+                    for item in nutrient_products
+                    if item.get("catalog_id") and item.get("id")
+                }
+                for stage, stage_products in selected_program.get("stages", {}).items():
+                    stage_catalog_ids = list(stage_products.get("core_product_ids", []))
+                    if program_scope == "complete":
+                        stage_catalog_ids.extend(stage_products.get("optional_product_ids", []))
+                    stage_catalog_ids = [
+                        item for item in dict.fromkeys(stage_catalog_ids)
+                        if item in selected_catalog_ids
+                    ]
+                    stage_snapshot[str(stage)] = {
+                        "catalog_product_ids": stage_catalog_ids,
+                        "nutrient_ids": [
+                            local_by_catalog[item]
+                            for item in stage_catalog_ids
+                            if item in local_by_catalog
+                        ],
+                    }
             identity = {
                 "plant_profile_id": selected_plant["id"],
                 "plant_species": selected_plant["name"],
@@ -368,7 +434,29 @@ class GrowAsistService:
                     "name": nutrient_program,
                     "nutrient_ids": nutrient_ids,
                     "products": nutrient_products,
-                    "source": "standalone_grow_start",
+                    "program_id": selected_program_id,
+                    "brand_id": (
+                        str(selected_program.get("brand_id") or "")
+                        if selected_program else ""
+                    ),
+                    "brand": (
+                        str(selected_program.get("brand") or "")
+                        if selected_program else ""
+                    ),
+                    "line": (
+                        str(selected_program.get("line") or "")
+                        if selected_program else ""
+                    ),
+                    "scope": program_scope if selected_program else "manual",
+                    "catalog_product_ids": selected_catalog_ids,
+                    "stages": stage_snapshot,
+                    "catalog_version": str(catalog.get("catalog_version") or ""),
+                    "source_url": (
+                        str(selected_program.get("source_url") or "")
+                        if selected_program else ""
+                    ),
+                    "dose_plan_included": False,
+                    "source": "catalog_program" if selected_program else "standalone_grow_start",
                 },
                 initial_stage=str(payload.get("initial_stage") or "") or None,
                 cultivation_id=payload.get("cultivation_id"),
@@ -561,48 +649,86 @@ class GrowAsistService:
             raise ValueError("Katalog ürünü seçilmelidir")
         with self._mutation_lock:
             state = self.store.load_state()
-            product = state.get("nutrient_catalog", {}).get("products", {}).get(catalog_id)
-            if not isinstance(product, dict):
-                raise ValueError("Katalog ürünü bulunamadı")
-            fluids = state.setdefault("hardware", {}).setdefault("dosing_fluids", [])
-            existing = next(
-                (
-                    item for item in fluids
-                    if isinstance(item, dict) and item.get("catalog_id") == catalog_id
-                ),
-                None,
-            )
-            if existing is not None:
-                return {"created": False, "fluid": deepcopy(existing)}
-            fluid_id = f"nut_{hashlib.sha256(catalog_id.encode()).hexdigest()[:20]}"
-            name = str(product.get("name") or catalog_id)
-            lowered = name.casefold()
-            ph_direction = ""
-            if product.get("category") == "ph":
-                ph_direction = "down" if any(word in lowered for word in ("down", "min")) else "up"
-            raw = {
-                key: deepcopy(product.get(key))
-                for key in (
-                    "name", "brand", "category", "line", "part", "npk",
-                    "phase", "medium", "form", "input_type", "description",
-                    "source_url", "verified_on", "official",
-                )
-            }
-            raw.update({
-                "id": fluid_id,
-                "catalog_id": catalog_id,
-                "ph_direction": ph_direction,
-                "required": False,
-            })
-            fluids.append(raw)
-            normalized = self._normalize_fluid(raw)
-            fluids[-1] = normalized
+            created, fluid = self._ensure_catalog_fluid(state, catalog_id)
             saved = self.store.save_state(state)
             stored = next(
                 item for item in saved["hardware"]["dosing_fluids"]
-                if item.get("id") == fluid_id
+                if item.get("id") == fluid["id"]
             )
-            return {"created": True, "fluid": deepcopy(stored)}
+            return {"created": created, "fluid": deepcopy(stored)}
+
+    def _ensure_catalog_fluid(
+        self, state: dict[str, Any], catalog_id: str
+    ) -> tuple[bool, dict[str, Any]]:
+        """Ensure one catalogue product exists locally without saving state."""
+        product = state.get("nutrient_catalog", {}).get("products", {}).get(catalog_id)
+        if not isinstance(product, dict):
+            raise ValueError("Katalog ürünü bulunamadı")
+        fluids = state.setdefault("hardware", {}).setdefault("dosing_fluids", [])
+        existing = next(
+            (
+                item for item in fluids
+                if isinstance(item, dict) and item.get("catalog_id") == catalog_id
+            ),
+            None,
+        )
+        if existing is not None:
+            return False, existing
+        fluid_id = f"nut_{hashlib.sha256(catalog_id.encode()).hexdigest()[:20]}"
+        name = str(product.get("name") or catalog_id)
+        lowered = name.casefold()
+        ph_direction = ""
+        if product.get("category") == "ph":
+            ph_direction = "down" if any(word in lowered for word in ("down", "min")) else "up"
+        raw = {
+            key: deepcopy(product.get(key))
+            for key in (
+                "name", "brand", "category", "line", "part", "npk",
+                "phase", "medium", "form", "input_type", "description",
+                "source_url", "verified_on", "official",
+            )
+        }
+        raw.update({
+            "id": fluid_id,
+            "catalog_id": catalog_id,
+            "ph_direction": ph_direction,
+            "required": False,
+        })
+        normalized = self._normalize_fluid(raw)
+        fluids.append(normalized)
+        return True, normalized
+
+    def add_nutrient_program(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Copy a catalogue program's product set into the user's library atomically."""
+        program_id = _text(payload.get("program_id"), 128)
+        scope = _text(payload.get("scope"), 16, "core").casefold()
+        if not program_id:
+            raise ValueError("Besin programı seçilmelidir")
+        if scope not in {"core", "complete"}:
+            raise ValueError("Program kapsamı core veya complete olmalıdır")
+        with self._mutation_lock:
+            state = self.store.load_state()
+            program = state.get("nutrient_catalog", {}).get("programs", {}).get(program_id)
+            if not isinstance(program, dict):
+                raise ValueError("Besin programı bulunamadı")
+            catalog_ids = list(program.get("core_product_ids", []))
+            if scope == "complete":
+                catalog_ids.extend(program.get("optional_product_ids", []))
+            added: list[dict[str, Any]] = []
+            existing: list[dict[str, Any]] = []
+            for catalog_id in dict.fromkeys(catalog_ids):
+                created, fluid = self._ensure_catalog_fluid(state, str(catalog_id))
+                (added if created else existing).append(deepcopy(fluid))
+            saved = self.store.save_state(state)
+            saved_by_id = {
+                item["id"]: item for item in saved["hardware"]["dosing_fluids"]
+            }
+            return {
+                "program_id": program_id,
+                "scope": scope,
+                "added": [deepcopy(saved_by_id[item["id"]]) for item in added],
+                "existing": [deepcopy(saved_by_id[item["id"]]) for item in existing],
+            }
 
     @staticmethod
     def _normalize_calibration(value: Any) -> dict[str, Any] | None:

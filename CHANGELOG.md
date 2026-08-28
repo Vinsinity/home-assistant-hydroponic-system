@@ -14,13 +14,23 @@
   cultivation work, reusable Library records, and physical System setup.
   Preserve stable `#setup/...` routes, with a compact module switcher only on
   mobile where the full sidebar is unavailable.
-- Remove the misleading generic Profiles workspace and generic stage-to-product
-  assignments. Nutrient products now belong to one plant and one stage inside
-  Plant Library, so unrelated species never inherit the same product list.
+- Remove user-owned product IDs from the Plant Library editor. Plant profiles
+  now own crop-specific stage targets, while reusable nutrient programs own
+  manufacturer product sets and stage mapping.
 - Add a versioned SQLite manufacturer nutrient catalogue with 367 products from
   20 major brands. The Nutrients workspace now supports brand/product search,
   product details with official source links, and idempotent one-click copying
   into the user's own product list while preserving custom products.
+- Add 79 catalogue-derived nutrient-program profiles, including explicit
+  medium/water variants for manufacturer lines where products are alternatives.
+  Filter recommendations by hydroponic, coco, or soil setup and import a core or
+  expanded product set atomically without treating the profile as a dose chart.
+- Connect grow start to the plant → environment → brand → program flow and
+  snapshot the selected catalogue version, product identities, and per-stage
+  mapping into the immutable cultivation record.
+- Move Dosing out of System setup and into top-level cultivation navigation;
+  keep physical pump mapping, bounded tests, calibration, and safety limits
+  together without enabling automatic control.
 - Reduce the visible grow-start and setup fields to the decisions needed now;
   keep product selection, physical measurements, device connection values,
   pump calibration, and safety limits in clearly labelled optional sections.
@@ -47,9 +57,9 @@
   journal events.
 - Snapshot the selected Plant Library profile, Cannabis genetics, method,
   growing medium, fixture context, and nutrient-program name at grow start.
-- Let grow start select real catalog nutrient products, suggest only the
-  selected plant stage's products, and snapshot their complete identities into the
-  immutable cultivation record.
+- Let grow start select a compatible manufacturer program instead of manually
+  checking user-specific products, then snapshot complete product identities
+  and the program stage map into the immutable cultivation record.
 - Validate the complete browser flow on desktop and mobile while keeping all
   automatic equipment control disabled.
 - Add a reproducible Raspberry Pi 5 appliance image based on Raspberry Pi OS
