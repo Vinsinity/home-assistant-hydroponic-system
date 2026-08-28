@@ -71,6 +71,9 @@ def test_image_contains_release_and_sync_dependencies() -> None:
     assert 'release_name="image-${IGconf_artefact_version}"' in layer
     assert 'ln -s "releases/$release_name"' in layer
     assert '"$assets/growasist-release-manager"' in layer
+    assert '"$assets/growasist-i2c.conf" "$1/etc/modules-load.d/"' in layer
+    assert _text("image/assets/growasist-i2c.conf").strip() == "i2c-dev"
+    assert "After=systemd-modules-load.service" in _text("image/assets/growasist.service")
 
 
 def test_setup_tools_remain_visible_and_addressable() -> None:
@@ -83,6 +86,13 @@ def test_setup_tools_remain_visible_and_addressable() -> None:
     assert "state.profiles?.[stage]?.nutrient_ids" not in application
     assert "Hazır ürün kütüphanesi" in application
     assert "/api/v1/nutrients/catalog/add" in application
+    assert "/api/v1/i2c/discover" in application
+    assert "/api/v1/i2c/enroll" in application
+    assert "/api/v1/i2c/remove" in application
+    assert "/api/v1/dosing/calibration/start" in application
+    assert "data-add-hardware" not in application
+    assert "I²C adresi" not in application
+    assert "Ölçülen hacim · ml" in application
     assert "#setup/${setupView || currentSetupView}" in application
     assert "Kütüphane" in shell
     assert "Sistem" in shell

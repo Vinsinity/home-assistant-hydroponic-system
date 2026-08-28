@@ -83,6 +83,17 @@ def default_state() -> dict[str, Any]:
             "assignments": {},
             "last_scan": None,
         },
+        "i2c_registry": {
+            "schema_version": 1,
+            "health": {
+                "available": False,
+                "path": "/dev/i2c-1",
+                "error": "Henüz taranmadı",
+            },
+            "candidates": {},
+            "last_scan": None,
+            "retired_assignments": [],
+        },
     }
 
 

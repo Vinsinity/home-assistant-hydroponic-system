@@ -31,6 +31,14 @@
 - Add bounded, read-only LAN discovery for Shelly mDNS/RPC, TP-Link/Tapo UDP,
   Tuya candidates, and SSDP; require an explicit name and grow-system role
   before moving any candidate into the persistent device registry.
+- Replace manually typed I2C address/driver records with Raspberry Pi bus
+  discovery, verified Atlas identities, explicit PCA9685 board confirmation,
+  removable assignments with retained recovery snapshots, and honest online,
+  credential-required, and adapter-pending device states.
+- Add dependency-free Linux `/dev/i2c-N` access, persistent `i2c-dev` module
+  loading, and a two-step physical pump calibration that can only save ml/s
+  after a confirmed bounded motor run. Serialize all motor actions and always
+  stop the selected channel when the run ends or fails.
 - Include profiles, hardware, dosing fluids, safety policy, and Assistant
   settings in checksummed exports so moving away from Home Assistant does not
   hide or discard the system configuration.

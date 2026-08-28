@@ -58,6 +58,8 @@ mmdebstrap:
       install -m 0644 "$assets/growasist.service" "$1/etc/systemd/system/"
       install -m 0644 "$assets/growasist-backup.service" "$1/etc/systemd/system/"
       install -m 0644 "$assets/growasist-backup.timer" "$1/etc/systemd/system/"
+      install -d -m 0755 "$1/etc/modules-load.d"
+      install -m 0644 "$assets/growasist-i2c.conf" "$1/etc/modules-load.d/"
       install -d -m 0755 "$1/etc/avahi/services"
       install -m 0644 "$assets/growasist-avahi.service" "$1/etc/avahi/services/"
     - |-

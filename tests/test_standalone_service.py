@@ -180,6 +180,98 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
     assert restarted["engine_enabled"] is False
 
 
+def test_i2c_discovery_enrollment_and_removal_preserve_fluids(tmp_path, monkeypatch):
+    class FakeGateway:
+        def __init__(self, bus_number):
+            assert bus_number == 1
+
+        def scan(self, assignments):
+            return {
+                "health": {"available": True, "path": "/dev/i2c-1", "error": ""},
+                "last_scan": {"finished_at": "2026-08-28T10:00:00Z", "candidate_count": 1, "online_count": 1, "warnings": []},
+                "candidates": {"i2c_1_40": {
+                    "id": "i2c_1_40", "address": 0x40, "address_hex": "0x40",
+                    "online": True, "supported": True, "configured": False,
+                    "model": "PCA9685 PWM denetleyici", "chip": "PCA9685",
+                    "suggested_driver": "waveshare_motor_hat", "driver_locked": False,
+                    "requires_driver_confirmation": True,
+                }},
+            }
+
+    monkeypatch.setattr("growasist.service.I2CHardwareGateway", FakeGateway)
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    service.update_hardware({"dosing_fluids": [
+        {"id": "ph_up", "name": "pH+"},
+        {"id": "ph_down", "name": "pH-"},
+        {"id": "bloom_a", "name": "Bloom A", "category": "base"},
+    ]})
+
+    discovered = service.discover_i2c({})
+    enrolled = service.enroll_i2c_device({
+        "candidate_id": "i2c_1_40", "name": "Dozaj kartı",
+        "driver": "waveshare_motor_hat",
+    })
+    assert enrolled["channels"][0]["fluid_id"] == "unassigned"
+    enrolled["channels"][0]["fluid_id"] = "bloom_a"
+    service.update_hardware({"device_assignments": [enrolled]})
+    removed = service.remove_i2c_device({"address": 0x40})
+    restored = service.enroll_i2c_device({
+        "candidate_id": "i2c_1_40", "name": "Dozaj kartı",
+        "driver": "waveshare_motor_hat",
+    })
+    service.remove_i2c_device({"address": 0x40})
+    bootstrap = service.bootstrap()
+
+    assert discovered["health"]["available"] is True
+    assert removed["removed"]["name"] == "Dozaj kartı"
+    assert restored["channels"][0]["fluid_id"] == "bloom_a"
+    assert any(item["id"] == "bloom_a" for item in bootstrap["hardware"]["dosing_fluids"])
+    assert bootstrap["hardware"]["device_assignments"] == []
+    assert bootstrap["i2c_registry"]["retired_assignments"][0]["address"] == 0x40
+
+
+def test_pump_calibration_requires_real_run_receipt(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeGateway:
+        def __init__(self, bus_number):
+            assert bus_number == 1
+
+        def run_pump(self, address, channel, seconds, speed):
+            calls.append((address, channel, seconds, speed))
+
+    monkeypatch.setattr("growasist.service.I2CHardwareGateway", FakeGateway)
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    service.update_hardware({"device_assignments": [{
+        "address": 0x40, "driver": "waveshare_motor_hat", "name": "Motor HAT",
+        "channels": [
+            {"id": "A", "fluid_id": "ph_down", "pump": {}, "calibration": None},
+            {"id": "B", "fluid_id": "unassigned", "pump": {}, "calibration": None},
+        ],
+    }]})
+
+    with pytest.raises(ValueError, match="güvenlik onayı"):
+        service.test_pump({"address": 0x40, "channel": "A", "seconds": 1})
+    tested = service.test_pump({
+        "address": 0x40, "channel": "A", "seconds": 3,
+        "speed": 60, "confirm": True,
+    })
+    run = service.start_pump_calibration({
+        "address": 0x40, "channel": "A", "seconds": 10,
+        "speed": 100, "confirm": True,
+    })
+    calibrated = service.complete_pump_calibration({
+        "token": run["token"], "volume_ml": 12,
+    })
+
+    assert tested["stopped"] is True
+    assert calls == [(0x40, "A", 3.0, 60), (0x40, "A", 10.0, 100)]
+    assert calibrated["calibration"]["flow_ml_s"] == 1.2
+    assert calibrated["pump"]["verified"] is True
+    with pytest.raises(ValueError, match="bulunamadı veya süresi doldu"):
+        service.complete_pump_calibration({"token": run["token"], "volume_ml": 12})
+
+
 def test_official_catalog_product_is_added_once_and_keeps_details(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
     catalog = service.bootstrap()["nutrient_catalog"]

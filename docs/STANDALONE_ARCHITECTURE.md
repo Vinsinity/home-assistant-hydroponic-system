@@ -91,7 +91,9 @@ available for an explicit rollback.
    **Usable first slice complete.**
 3. Device registry plus read-only Shelly/Tapo identity discovery and explicit
    candidate enrolment. **Discovery and enrolment complete; monitoring pending.**
-4. Atlas EZO/PCA9685 hardware gateway and sensor history.
+4. Atlas EZO/PCA9685 hardware gateway and sensor history. **Bus discovery,
+   enrolment, bounded motor test, and measured calibration complete; continuous
+   sensor history pending.**
 5. Qualified Shelly, Tapo, and Tuya-local telemetry/control adapters; optional
    Home Assistant adapter for remaining vendor integrations.
 6. Read-only Grow Assistant provider abstraction.

@@ -538,36 +538,86 @@ function openFluidDialog(fluid = null) {
 
 const driverLabels = { atlas_do: "Atlas EZO DO", atlas_ph: "Atlas EZO pH", atlas_ec: "Atlas EZO EC", atlas_rtd: "Atlas EZO RTD", waveshare_motor_hat: "Waveshare Motor HAT", pca9685_generic: "PCA9685" };
 
+function i2cCandidate(address) {
+  return Object.values(state.i2c_registry?.candidates || {}).find((item) => Number(item.address) === Number(address));
+}
+
+function i2cStatus(item, candidate) {
+  if (!candidate?.online) return ["Bağlantı yok", "limited"];
+  if (String(item.driver || "").startsWith("atlas_") && candidate.identity_verified) return ["Bağlı · kimlik doğrulandı", "supported"];
+  if (item.driver === "waveshare_motor_hat") return ["Bağlı · kart tipi onaylı", "supported"];
+  return ["Bağlı · sürücü tanımlı", "supported"];
+}
+
 function renderHardware(panel) {
   const hardware = state.hardware || {};
   const assignments = hardware.device_assignments || [];
+  const i2cRegistry = state.i2c_registry || {};
+  const i2cCandidates = Object.values(i2cRegistry.candidates || {});
+  const newI2cCandidates = i2cCandidates.filter((item) => item.online && !item.configured);
+  const health = i2cRegistry.health || {};
+  const i2cScan = i2cRegistry.last_scan;
   const networkDevices = Object.values(state.device_registry?.devices || {});
   const candidates = Object.values(state.device_registry?.candidates || {}).sort((left, right) => Number(right.online) - Number(left.online) || Number(right.supported) - Number(left.supported) || String(left.vendor).localeCompare(String(right.vendor)) || String(left.host).localeCompare(String(right.host), undefined, { numeric: true }));
-  const knownCandidates = candidates.filter((item) => item.vendor !== "Unknown");
-  const otherCandidates = candidates.filter((item) => item.vendor === "Unknown");
+  const knownCandidates = candidates.filter((item) => item.supported);
+  const otherCandidates = candidates.filter((item) => !item.supported);
   const lastScan = state.device_registry?.last_scan;
-  panel.innerHTML = `<section class="hardware-section"><header class="section-head"><div><h3>Kablolu cihazlar</h3><small>${assignments.length} cihaz</small></div><button class="primary-button compact" type="button" data-add-hardware>Cihaz ekle</button></header><div class="record-ledger">${assignments.length ? assignments.map((item) => `<button type="button" class="record-row hardware-row" data-hardware-address="${item.address}"><span class="record-code">0x${Number(item.address).toString(16).toUpperCase().padStart(2,"0")}</span><span><b>${html(item.name)}</b><small>${html(driverLabels[item.driver] || item.driver)}</small></span><span>${item.channels ? `${item.channels.length} motor kanalı` : "Sensör"}</span><em>Düzenle</em></button>`).join("") : '<p class="empty-list">Henüz kablolu cihaz yok.</p>'}</div><details class="advanced-settings"><summary>Bağlantı ayarları</summary><form class="hardware-connection-form" data-hardware-base><label><span>Bağlantı kanalı</span><input name="i2c_bus" type="number" min="0" max="255" value="${html(hardware.i2c_bus ?? 1)}"></label><label><span>Okuma aralığı · saniye</span><input name="poll_interval" type="number" min="10" max="300" value="${html(hardware.poll_interval ?? 30)}"></label><button class="secondary-button" type="submit">Kaydet</button></form></details></section>
-    <section class="hardware-section network-discovery"><header class="section-head"><div><h3>Ağdaki cihazlar</h3><small>Shelly, Tapo ve diğer desteklenen cihazlar</small></div><button class="primary-button compact" type="button" data-network-scan>Ağı tara</button></header>
+  const onlineCount = assignments.filter((item) => i2cCandidate(item.address)?.online).length;
+  panel.innerHTML = `<section class="hardware-section wired-hardware"><header class="section-head"><div><h3>Raspberry Pi bağlantı hattı</h3><small>Kartı bağla, tara ve bulunan cihazı onayla</small></div><button class="primary-button compact" type="button" data-i2c-scan>Donanımı tara</button></header>
+      <div class="hardware-busline ${health.available ? "bus-online" : "bus-offline"}">
+        <div class="bus-origin"><span class="pi-port">I²C</span><div><b>Raspberry Pi</b><small>${html(health.path || `/dev/i2c-${hardware.i2c_bus ?? 1}`)}</small></div></div>
+        <div class="bus-track" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="bus-metrics"><span><b>${health.available ? "Hazır" : "Bağlantı yok"}</b><small>${html(health.error || "I²C hattı erişilebilir")}</small></span><span><b>${onlineCount}/${assignments.length}</b><small>tanımlı cihaz çevrimiçi</small></span><span><b>${newI2cCandidates.length}</b><small>yeni cihaz bulundu</small></span></div>
+      </div>
+      <div class="subsection-label"><b>Tanımlı kablolu cihazlar</b><small>${assignments.length}</small></div>
+      <div class="record-ledger">${assignments.length ? assignments.map((item) => hardwareAssignmentRow(item, i2cCandidate(item.address))).join("") : '<p class="empty-list">Henüz tanımlı cihaz yok. Kartları Raspberry Pi üzerine bağlayıp tarayın.</p>'}</div>
+      ${newI2cCandidates.length ? `<div class="detected-strip"><header><b>Yeni bulunanlar</b><small>Adres otomatik okundu; yalnızca kart tipini doğrulayın.</small></header><div class="record-ledger">${newI2cCandidates.map(hardwareCandidateRow).join("")}</div></div>` : ""}
+      <details class="advanced-settings"><summary>Bağlantı ayrıntıları</summary><form class="hardware-connection-form" data-hardware-base><label><span>I²C veri yolu</span><input name="i2c_bus" type="number" min="0" max="255" value="${html(hardware.i2c_bus ?? 1)}"></label><label><span>Okuma aralığı · saniye</span><input name="poll_interval" type="number" min="10" max="300" value="${html(hardware.poll_interval ?? 30)}"></label><button class="secondary-button" type="submit">Kaydet</button></form><p class="connection-footnote">Son tarama: ${html(i2cScan?.finished_at ? String(i2cScan.finished_at).replace("T", " ").slice(0, 19) : "—")}</p></details></section>
+    <section class="hardware-section network-discovery"><header class="section-head"><div><h3>Ağdaki cihazlar</h3><small>Shelly, Tapo ve desteklenen yerel ağ cihazları</small></div><button class="primary-button compact" type="button" data-network-scan>Ağı tara</button></header>
       <div class="scan-summary"><span><b>${lastScan ? `${html(lastScan.candidate_count)} cihaz bulundu` : "Henüz tarama yapılmadı"}</b><small>${lastScan ? html(String(lastScan.finished_at || "").replace("T", " ").slice(0, 16)) : "Bulunan cihazları sen onaylamadan eklemeyiz."}</small></span>${lastScan?.warnings?.length ? `<em>${html(lastScan.warnings.join(" · "))}</em>` : ""}</div>
-      <div class="network-columns"><div><div class="subsection-label"><b>Tanınan cihazlar</b><small>${knownCandidates.length}</small></div><div class="record-ledger">${knownCandidates.length ? knownCandidates.map(networkCandidateRow).join("") : '<p class="empty-list">Shelly, Tapo veya Tuya adayı bulunamadı.</p>'}</div>${otherCandidates.length ? `<details class="other-devices"><summary>Diğer ağ cihazları <span>${otherCandidates.length}</span></summary><div class="record-ledger">${otherCandidates.map(networkCandidateRow).join("")}</div></details>` : ""}</div>
+      <div class="network-columns"><div><div class="subsection-label"><b>Bağlanabilir cihazlar</b><small>${knownCandidates.length}</small></div><div class="record-ledger">${knownCandidates.length ? knownCandidates.map(networkCandidateRow).join("") : '<p class="empty-list">Desteklenen yeni cihaz bulunamadı.</p>'}</div>${otherCandidates.length ? `<details class="other-devices"><summary>Tanımlanamayan veya henüz desteklenmeyen cihazlar <span>${otherCandidates.length}</span></summary><div class="record-ledger">${otherCandidates.map(networkCandidateRow).join("")}</div></details>` : ""}</div>
       <div><div class="subsection-label"><b>Tanımlı cihazlar</b><small>${networkDevices.length}</small></div><div class="record-ledger">${networkDevices.length ? networkDevices.map(networkDeviceRow).join("") : '<p class="empty-list">Henüz onaylanmış ağ cihazı yok.</p>'}</div></div></div>
     </section>`;
   panel.querySelector("[data-hardware-base]").addEventListener("submit", saveHardwareBase);
-  panel.querySelector("[data-add-hardware]").addEventListener("click", () => openHardwareDialog());
-  panel.querySelectorAll("[data-hardware-address]").forEach((button) => button.addEventListener("click", () => openHardwareDialog(assignments.find((item) => item.address === Number(button.dataset.hardwareAddress)))));
+  panel.querySelector("[data-i2c-scan]").addEventListener("click", scanI2C);
+  panel.querySelectorAll("[data-hardware-address]").forEach((button) => button.addEventListener("click", () => { const item = assignments.find((entry) => entry.address === Number(button.dataset.hardwareAddress)); openI2CDeviceDialog(i2cCandidate(item.address), item); }));
+  panel.querySelectorAll("[data-i2c-candidate]").forEach((button) => button.addEventListener("click", () => openI2CDeviceDialog(newI2cCandidates.find((item) => item.id === button.dataset.i2cCandidate))));
   panel.querySelector("[data-network-scan]").addEventListener("click", scanNetwork);
   panel.querySelectorAll("[data-network-candidate]").forEach((button) => button.addEventListener("click", () => openNetworkDeviceDialog(candidates.find((item) => item.id === button.dataset.networkCandidate))));
   panel.querySelectorAll("[data-network-device]").forEach((button) => button.addEventListener("click", () => openNetworkDeviceDialog(networkDevices.find((item) => item.id === button.dataset.networkDevice))));
 }
 
+function hardwareAssignmentRow(item, candidate) {
+  const [label, statusClass] = i2cStatus(item, candidate);
+  return `<button type="button" class="record-row hardware-row ${candidate?.online ? "" : "offline"}" data-hardware-address="${item.address}"><span class="record-code">0x${Number(item.address).toString(16).toUpperCase().padStart(2,"0")}</span><span><b>${html(item.name)}</b><small>${html(driverLabels[item.driver] || item.driver)}</small></span><span class="support-state ${statusClass}">${html(label)}</span><em>Yönet</em></button>`;
+}
+
+function hardwareCandidateRow(item) {
+  return `<button type="button" class="record-row hardware-row discovered" data-i2c-candidate="${html(item.id)}"><span class="record-code">${html(item.address_hex)}</span><span><b>${html(item.model || item.chip)}</b><small>${html(item.chip)}${item.firmware ? ` · ${html(item.firmware)}` : ""}</small></span><span class="support-state supported">Fiziksel olarak bulundu</span><em>Tanımla</em></button>`;
+}
+
 function networkCandidateRow(item) {
-  const support = !item.online ? "Son taramada görülmedi" : item.supported ? "Kimliği okundu" : item.vendor === "Unknown" ? "Türü belirlenemedi" : "Aday cihaz";
-  return `<button type="button" class="network-row ${item.online ? "" : "offline"}" data-network-candidate="${html(item.id)}"><span class="vendor-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || item.protocol)}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span class="support-state ${item.online && item.supported ? "supported" : "limited"}">${html(support)}</span><em>Tanımla</em></button>`;
+  const support = !item.online ? "Son taramada görülmedi" : item.supported ? (item.requires_auth ? "Bulundu · giriş gerekli" : "Bulundu · bağlantı bekliyor") : "Sürücü henüz yok";
+  return `<button type="button" class="network-row ${item.online ? "" : "offline"}" data-network-candidate="${html(item.id)}" ${item.supported && item.online ? "" : "disabled"}><span class="vendor-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || item.protocol)}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span class="support-state ${item.online && item.supported ? "supported" : "limited"}">${html(support)}</span><em>${item.supported ? "Tanımla" : "Salt okunur"}</em></button>`;
 }
 
 function networkDeviceRow(item) {
   const roles = { environment_sensor: "Ortam sensörü", co2_sensor: "CO₂ sensörü", light_dimmer: "Işık dimmeri", light_power: "Işık gücü", outlet_bank: "Priz grubu", humidifier: "Nemlendirici", unassigned: "Rol atanmadı" };
-  return `<button type="button" class="network-row enrolled" data-network-device="${html(item.id)}"><span class="vendor-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || item.protocol)}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span class="support-state ${item.online ? "supported" : "limited"}">${html(roles[item.role] || item.role || "Rol atanmadı")}</span><em>${item.online ? "Düzenle" : "Son taramada yok · Düzenle"}</em></button>`;
+  const connections = { credentials_required: "Giriş bilgisi gerekli", adapter_pending: "Bağlantı sürücüsü hazırlanıyor", connected: "Bağlı" };
+  return `<button type="button" class="network-row enrolled ${item.online ? "" : "offline"}" data-network-device="${html(item.id)}"><span class="vendor-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(roles[item.role] || item.role || "Rol atanmadı")}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span class="support-state ${item.connection_status === "connected" ? "supported" : "limited"}">${html(item.online ? (connections[item.connection_status] || "Bağlantı bekliyor") : "Son taramada görülmedi")}</span><em>Yönet</em></button>`;
+}
+
+async function scanI2C(event) {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = "Donanım taranıyor…";
+  try {
+    const payload = await api("/api/v1/i2c/discover", { method: "POST", body: JSON.stringify({}) });
+    await loadState(); currentSetupView = "hardware";
+    showToast(`${Number(payload.result?.last_scan?.online_count || 0)} kablolu cihaz fiziksel olarak bulundu.`);
+  } catch (error) {
+    button.disabled = false; button.textContent = "Donanımı tara"; showToast(error.message, true);
+  }
 }
 
 async function scanNetwork(event) {
@@ -590,11 +640,18 @@ function openNetworkDeviceDialog(item) {
   const roles = [["unassigned","Şimdilik rol verme"],["environment_sensor","Ortam sıcaklık / nem sensörü"],["co2_sensor","CO₂ sensörü"],["light_dimmer","Işık dimmeri"],["light_power","Işık aç / kapat"],["outlet_bank","Priz grubu"],["humidifier","Nemlendirici"]];
   openDialog({
     kicker: "Ağ cihazı", title: edit ? "Cihazı düzenle" : "Cihazı tanımla", submitLabel: edit ? "Kaydet" : "Cihaz listesine ekle",
-    body: `<div class="device-fingerprint"><span class="vendor-mark large-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><div><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || "Model bilinmiyor")} · ${html(item.host)}</small></div></div><div class="dialog-grid"><label class="full"><span>Cihaz adı</span><input name="name" value="${html(item.name || item.model || item.host)}" required></label><label class="full"><span>Ne için kullanılacak?</span><select name="role">${roles.map(([role,label]) => `<option value="${role}" ${(item.role || item.suggested_role || "unassigned") === role ? "selected" : ""}>${label}</option>`).join("")}</select></label></div><details class="advanced-settings dialog-advanced"><summary>Cihaz bilgileri</summary><dl class="fingerprint-grid"><div><dt>Protokol</dt><dd>${html(item.protocol)}</dd></div><div><dt>MAC</dt><dd>${html(item.mac || "Bilinmiyor")}</dd></div><div><dt>Keşif sonucu</dt><dd>${html(item.supported ? "Kimliği okundu" : "Aday olarak bulundu")}</dd></div><div><dt>Giriş bilgisi</dt><dd>${html(item.requires_auth ? "Bağlantı sırasında gerekli" : "Gerekli görünmüyor")}</dd></div></dl></details>`,
+    body: `<div class="device-fingerprint"><span class="vendor-mark large-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><div><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || "Model bilinmiyor")} · ${html(item.host)}</small></div></div><div class="dialog-grid"><label class="full"><span>Cihaz adı</span><input name="name" value="${html(item.name || item.model || item.host)}" required></label><label class="full"><span>Ne için kullanılacak?</span><select name="role">${roles.map(([role,label]) => `<option value="${role}" ${(item.role || item.suggested_role || "unassigned") === role ? "selected" : ""}>${label}</option>`).join("")}</select></label></div><details class="advanced-settings dialog-advanced"><summary>Cihaz bilgileri</summary><dl class="fingerprint-grid"><div><dt>Protokol</dt><dd>${html(item.protocol)}</dd></div><div><dt>MAC</dt><dd>${html(item.mac || "Bilinmiyor")}</dd></div><div><dt>Keşif sonucu</dt><dd>${html(item.supported ? "Cihaz ailesi tanındı" : "Yalnızca ağ adresi bulundu")}</dd></div><div><dt>Bağlantı</dt><dd>${html(item.requires_auth ? "Kullanıcı bilgisi gerekli" : "Sürücü bağlantısı bekliyor")}</dd></div></dl></details>${edit ? '<button class="danger-button dialog-remove" type="button" data-remove-network>Bu tanımı kaldır</button>' : ""}`,
     onSubmit: async (data) => {
       await api("/api/v1/network/enroll", { method: "POST", body: JSON.stringify({ candidate_id: item.id, name: data.get("name"), role: data.get("role") }) });
       dialog.close(); await loadState(); currentSetupView = "hardware"; showToast(edit ? "Ağ cihazı tanımı güncellendi." : "Ağ cihazı tanımlı cihazlara eklendi.");
     },
+  });
+  dialogBody.querySelector("[data-remove-network]")?.addEventListener("click", async () => {
+    if (!confirm(`${item.name || item.host} cihaz tanımı kaldırılsın mı?`)) return;
+    try {
+      await api("/api/v1/network/remove", { method: "POST", body: JSON.stringify({ candidate_id: item.id }) });
+      dialog.close(); await loadState(); currentSetupView = "hardware"; showToast("Ağ cihazı tanımı kaldırıldı.");
+    } catch (error) { showToast(error.message, true); }
   });
 }
 
@@ -605,20 +662,37 @@ async function saveHardwareBase(event) {
   await loadState(); currentSetupView = "hardware"; showToast("I²C bağlantı ayarları kaydedildi.");
 }
 
-function openHardwareDialog(item = null) {
+function openI2CDeviceDialog(candidate, item = null) {
+  if (!candidate && !item) return;
   const edit = Boolean(item);
-  openDialog({ kicker: "Kablolu cihaz", title: edit ? "Cihazı düzenle" : "Cihaz ekle", submitLabel: "Kaydet",
-    body: `<p class="dialog-note">Adres ve sürücü fiziksel cihazı tanımlar. Motor kanallarına sıvı ataması Dozaj bölümünde yapılır.</p><div class="dialog-grid"><label><span>Görünen ad</span><input name="name" value="${html(item?.name || "")}" required></label><label><span>I²C adresi</span><input name="address" value="${html(item ? `0x${Number(item.address).toString(16).toUpperCase()}` : "0x63")}" required></label><label class="full"><span>Sürücü</span><select name="driver">${Object.entries(driverLabels).map(([driver,label]) => `<option value="${driver}" ${item?.driver === driver ? "selected" : ""}>${label}</option>`).join("")}</select></label></div>`,
+  const detected = Boolean(candidate?.online);
+  const address = Number(candidate?.address ?? item.address);
+  const currentDriver = item?.driver || candidate?.suggested_driver || "pca9685_generic";
+  const isPca = candidate?.chip === "PCA9685" || ["waveshare_motor_hat","pca9685_generic"].includes(currentDriver);
+  const driverControl = isPca && !edit
+    ? `<label class="full"><span>Takılı kart</span><select name="driver"><option value="waveshare_motor_hat" ${currentDriver === "waveshare_motor_hat" ? "selected" : ""}>Waveshare Motor Driver HAT</option><option value="pca9685_generic" ${currentDriver === "pca9685_generic" ? "selected" : ""}>Genel PCA9685 kartı</option></select></label>`
+    : `<input name="driver" type="hidden" value="${html(currentDriver)}"><div class="locked-driver full"><span>Sürücü</span><b>${html(driverLabels[currentDriver] || currentDriver)}</b><small>${edit ? "Bağlı kanalları korumak için kilitli" : "Cihaz kimliğinden otomatik seçildi"}</small></div>`;
+  openDialog({
+    kicker: "Kablolu cihaz", title: edit ? "Cihazı yönet" : "Bulunan cihazı tanımla", submitLabel: "Kaydet",
+    body: `<div class="device-fingerprint"><span class="record-code large-code">0x${address.toString(16).toUpperCase().padStart(2,"0")}</span><div><b>${html(candidate?.model || item?.name)}</b><small>${html(candidate?.chip || driverLabels[currentDriver])} · ${detected ? "şu anda bağlı" : "şu anda yanıt vermiyor"}</small></div></div><p class="dialog-note">Adres Raspberry Pi tarafından otomatik okundu. Motor kartında yalnızca elinizdeki kart tipini doğrulayın.</p><div class="dialog-grid"><label class="full"><span>Cihaz adı</span><input name="name" value="${html(item?.name || candidate?.model || "")}" required></label>${driverControl}</div>${edit ? '<button class="danger-button dialog-remove" type="button" data-remove-i2c>Bu cihaz tanımını kaldır</button>' : ""}`,
     onSubmit: async (data) => {
-      const assignments = JSON.parse(JSON.stringify(state.hardware?.device_assignments || []));
-      const target = edit ? assignments.find((entry) => entry.address === item.address) : {};
-      target.address = data.get("address"); target.name = data.get("name"); target.driver = data.get("driver");
-      if (target.driver === "waveshare_motor_hat" && !target.channels) target.channels = ["A","B"].map((channel) => ({ id: channel, name: `Motor ${channel}`, fluid_id: "unassigned", pump: {}, calibration: null }));
-      if (target.driver !== "waveshare_motor_hat") delete target.channels;
-      if (!edit) assignments.push(target);
-      await api("/api/v1/hardware", { method: "POST", body: JSON.stringify({ device_assignments: assignments }) });
-      dialog.close(); await loadState(); currentSetupView = "hardware"; showToast("I²C cihaz tanımı kaydedildi.");
+      if (edit && !detected) {
+        const assignments = JSON.parse(JSON.stringify(state.hardware?.device_assignments || []));
+        const target = assignments.find((entry) => Number(entry.address) === address);
+        target.name = data.get("name");
+        await api("/api/v1/hardware", { method: "POST", body: JSON.stringify({ device_assignments: assignments }) });
+      } else {
+        await api("/api/v1/i2c/enroll", { method: "POST", body: JSON.stringify({ candidate_id: candidate.id, name: data.get("name"), driver: data.get("driver") }) });
+      }
+      dialog.close(); await loadState(); currentSetupView = "hardware"; showToast("Kablolu cihaz tanımı kaydedildi.");
     },
+  });
+  dialogBody.querySelector("[data-remove-i2c]")?.addEventListener("click", async () => {
+    if (!confirm(`${item.name} cihaz tanımı kaldırılsın mı? Sıvı kütüphaneniz silinmez.`)) return;
+    try {
+      await api("/api/v1/i2c/remove", { method: "POST", body: JSON.stringify({ address }) });
+      dialog.close(); await loadState(); currentSetupView = "hardware"; showToast("Kablolu cihaz tanımı kaldırıldı; geçmişi saklandı.");
+    } catch (error) { showToast(error.message, true); }
   });
 }
 
@@ -628,7 +702,7 @@ function renderDosing(panel) {
   const fluids = hardware.dosing_fluids || [];
   const hats = (hardware.device_assignments || []).filter((item) => item.driver === "waveshare_motor_hat");
   const fluidOptions = (selected) => `<option value="unassigned" ${selected === "unassigned" ? "selected" : ""}>Atanmamış</option>${fluids.map((fluid) => `<option value="${html(fluid.id)}" ${selected === fluid.id ? "selected" : ""}>${html(fluid.name)} · ${html(fluid.brand || "")}</option>`).join("")}`;
-  panel.innerHTML = `<form data-dosing-form><section class="hardware-section"><header class="section-head"><div><h3>Pompa kanalları</h3><small>${hats.reduce((total, item) => total + (item.channels?.length || 0), 0)} kanal</small></div></header>${hats.length ? hats.map((hat, hatIndex) => `<div class="motor-hat"><header><b>${html(hat.name)}</b></header>${(hat.channels || []).map((channel, channelIndex) => { const calibration = channel.calibration || {}; return `<div class="motor-channel"><div class="channel-name"><span>${html(channel.id)}</span><div><b>${html(channel.name)}</b><small>${calibration.flow_ml_s ? `${html(calibration.flow_ml_s)} ml/sn` : "Kalibrasyon yok"}</small></div></div><div><label><span>Bağlı sıvı</span><select name="channel.${hatIndex}.${channelIndex}.fluid_id">${fluidOptions(channel.fluid_id)}</select></label><details class="advanced-settings channel-settings"><summary>Pompa ve kalibrasyon</summary><div class="field-grid compact-grid"><label><span>Pompa markası</span><input name="channel.${hatIndex}.${channelIndex}.pump_brand" value="${html(channel.pump?.brand || "")}"></label><label><span>Pompa modeli</span><input name="channel.${hatIndex}.${channelIndex}.pump_model" value="${html(channel.pump?.model || "")}"></label><label><span>Çalışma süresi · sn</span><input name="channel.${hatIndex}.${channelIndex}.seconds" type="number" min="1" max="30" step=".1" value="${html(calibration.seconds || "")}" placeholder="Ölçüm yok"></label><label><span>Ölçülen hacim · ml</span><input name="channel.${hatIndex}.${channelIndex}.volume_ml" type="number" min=".01" max="500" step=".01" value="${html(calibration.volume_ml || "")}" placeholder="Ölçüm yok"></label><label><span>Pompa hızı · %</span><input name="channel.${hatIndex}.${channelIndex}.speed" type="number" min="20" max="100" value="${html(calibration.speed || 100)}"></label></div></details></div></div>`; }).join("")}</div>`).join("") : '<div class="device-empty"><span><b>Dozaj pompası bulunamadı</b><small>Önce Donanım bölümünden motor sürücünü ekle.</small></span><button class="secondary-button" type="button" data-go-hardware>Donanıma git</button></div>'}</section>
+  panel.innerHTML = `<form data-dosing-form><section class="hardware-section"><header class="section-head"><div><h3>Pompa kanalları</h3><small>Sıvıyı seç, kısa test yap ve ölçerek kalibre et</small></div></header>${hats.length ? hats.map((hat, hatIndex) => { const online = Boolean(i2cCandidate(hat.address)?.online); return `<div class="motor-hat ${online ? "" : "offline"}"><header><span><b>${html(hat.name)}</b><small>0x${Number(hat.address).toString(16).toUpperCase()} · ${online ? "kart bağlı" : "kart yanıt vermiyor"}</small></span></header>${(hat.channels || []).map((channel, channelIndex) => { const calibration = channel.calibration || {}; const ready = online && channel.fluid_id !== "unassigned" && calibration.flow_ml_s; const status = !online ? "Kart bağlantısı yok" : channel.fluid_id === "unassigned" ? "Sıvı seçilmedi" : !calibration.flow_ml_s ? "Kalibrasyon gerekli" : `${calibration.flow_ml_s} ml/sn · hazır`; return `<div class="motor-channel"><div class="channel-name"><span>${html(channel.id)}</span><div><b>${html(channel.name)}</b><small class="${ready ? "ready-text" : ""}">${html(status)}</small></div></div><div class="channel-setup"><label><span>Bu pompaya bağlı sıvı</span><select name="channel.${hatIndex}.${channelIndex}.fluid_id">${fluidOptions(channel.fluid_id)}</select></label><div class="channel-actions"><button class="secondary-button compact" type="button" data-pump-test data-address="${hat.address}" data-channel="${html(channel.id)}" ${online ? "" : "disabled"}>Kısa test</button><button class="secondary-button compact" type="button" data-pump-calibrate data-address="${hat.address}" data-channel="${html(channel.id)}" ${online ? "" : "disabled"}>${calibration.flow_ml_s ? "Yeniden kalibre et" : "Kalibre et"}</button></div><details class="advanced-settings channel-settings"><summary>Pompa bilgileri</summary><div class="field-grid simple-grid"><label><span>Pompa markası</span><input name="channel.${hatIndex}.${channelIndex}.pump_brand" value="${html(channel.pump?.brand || "")}"></label><label><span>Pompa modeli</span><input name="channel.${hatIndex}.${channelIndex}.pump_model" value="${html(channel.pump?.model || "")}"></label></div></details></div></div>`; }).join("")}</div>`; }).join("") : '<div class="device-empty"><span><b>Dozaj motor kartı bulunamadı</b><small>Motor kartını Raspberry Pi üzerine bağlayın ve Donanım bölümünde tarayın.</small></span><button class="secondary-button" type="button" data-go-hardware>Donanıma git</button></div>'}</section>
     <details class="advanced-settings"><summary>Dozaj güvenlik sınırları</summary><div class="field-grid">
       ${field("policy","nutrient_interval_minutes","Besin aralığı · dk",policy.nutrient_interval_minutes,{type:"number",min:30})}${field("policy","mixing_wait_minutes","Karışım bekleme · dk",policy.mixing_wait_minutes,{type:"number",min:5})}${field("policy","remeasure_wait_minutes","Yeniden ölçüm · dk",policy.remeasure_wait_minutes,{type:"number",min:1})}
       ${field("policy","ph_interval_minutes","pH aralığı · dk",policy.ph_interval_minutes,{type:"number",min:10})}${field("policy","ph_deadband","pH toleransı",policy.ph_deadband,{type:"number",min:.02,step:".01"})}${field("policy","max_nutrient_dose_ml","En fazla besin · ml",policy.max_nutrient_dose_ml,{type:"number",min:.1,step:".1"})}${field("policy","max_ph_dose_ml","En fazla pH sıvısı · ml",policy.max_ph_dose_ml,{type:"number",min:.1,step:".1"})}
@@ -636,6 +710,8 @@ function renderDosing(panel) {
     <div class="setup-save"><button class="primary-button" type="submit">Dozaj kurulumunu kaydet</button></div></form>`;
   panel.querySelector("[data-go-hardware]")?.addEventListener("click", () => { currentSetupView = "hardware"; renderSetup(); });
   panel.querySelector("[data-dosing-form]").addEventListener("submit", saveDosing);
+  panel.querySelectorAll("[data-pump-test]").forEach((button) => button.addEventListener("click", () => openPumpTestDialog(Number(button.dataset.address), button.dataset.channel)));
+  panel.querySelectorAll("[data-pump-calibrate]").forEach((button) => button.addEventListener("click", () => openPumpCalibrationDialog(Number(button.dataset.address), button.dataset.channel)));
 }
 
 async function saveDosing(event) {
@@ -649,11 +725,39 @@ async function saveDosing(event) {
     const prefix = `channel.${hatIndex}.${channelIndex}`;
     channel.fluid_id = data.get(`${prefix}.fluid_id`);
     channel.pump ||= {}; channel.pump.brand = data.get(`${prefix}.pump_brand`); channel.pump.model = data.get(`${prefix}.pump_model`);
-    const seconds = Number(data.get(`${prefix}.seconds`)); const volume = Number(data.get(`${prefix}.volume_ml`));
-    channel.calibration = seconds > 0 && volume > 0 ? { seconds, volume_ml: volume, speed: Number(data.get(`${prefix}.speed`) || 100), calibrated_at: localDate() } : null;
   }));
   await api("/api/v1/hardware", { method: "POST", body: JSON.stringify({ dosing_policy: policy, device_assignments: assignments }) });
   await loadState(); currentSetupView = "dosing"; showToast("Dozaj eşlemeleri ve emniyet sınırları kaydedildi.");
+}
+
+function openPumpTestDialog(address, channel) {
+  openDialog({ kicker: "Pompa testi", title: `Kanal ${channel} · kısa test`, submitLabel: "Pompayı çalıştır",
+    body: `<p class="dialog-note">Çıkış hortumunu güvenli bir kaba yönlendirin. Pompa en fazla 3 saniye çalışır ve ardından durur.</p><div class="dialog-grid"><label><span>Süre · saniye</span><input name="seconds" type="number" min="1" max="3" step=".5" value="1" required></label><label><span>Hız · %</span><input name="speed" type="number" min="20" max="100" value="60" required></label><label class="safety-confirm full"><input name="confirm" type="checkbox" required><span>Hortum güvenli kapta; pompanın çalışmasına hazırım.</span></label></div>`,
+    onSubmit: async (data) => {
+      await api("/api/v1/dosing/test", { method: "POST", body: JSON.stringify({ address, channel, seconds: Number(data.get("seconds")), speed: Number(data.get("speed")), confirm: data.get("confirm") === "on" }) });
+      dialog.close(); showToast(`Kanal ${channel} testi tamamlandı ve pompa durdu.`);
+    },
+  });
+}
+
+function openPumpCalibrationDialog(address, channel) {
+  openDialog({ kicker: "Pompa kalibrasyonu", title: `Kanal ${channel} · ölçüm`, submitLabel: "Ölçümü başlat",
+    body: `<p class="dialog-note">Boş bir ölçüm kabı hazırlayın. Pompa seçtiğiniz süre boyunca çalışacak; durduktan sonra kaptaki gerçek hacmi gireceksiniz.</p><div class="dialog-grid"><label><span>Ölçüm süresi · saniye</span><input name="seconds" type="number" min="2" max="30" step="1" value="10" required></label><label><span>Pompa hızı · %</span><input name="speed" type="number" min="20" max="100" value="100" required></label><label class="safety-confirm full"><input name="confirm" type="checkbox" required><span>Hortum ölçüm kabında; pompanın çalışmasına hazırım.</span></label></div>`,
+    onSubmit: async (data) => {
+      const result = await api("/api/v1/dosing/calibration/start", { method: "POST", body: JSON.stringify({ address, channel, seconds: Number(data.get("seconds")), speed: Number(data.get("speed")), confirm: data.get("confirm") === "on" }) });
+      dialog.close(); openCalibrationVolumeDialog(result.result);
+    },
+  });
+}
+
+function openCalibrationVolumeDialog(run) {
+  openDialog({ kicker: "Pompa kalibrasyonu", title: "Ölçülen hacim", submitLabel: "Kalibrasyonu kaydet",
+    body: `<p class="dialog-note">Pompa ${html(run.seconds)} saniye çalıştı ve durdu. Ölçüm kabında gördüğünüz gerçek hacmi girin.</p><div class="dialog-grid"><label class="full"><span>Ölçülen hacim · ml</span><input name="volume_ml" type="number" min=".01" max="500" step=".01" autofocus required></label></div>`,
+    onSubmit: async (data) => {
+      await api("/api/v1/dosing/calibration/complete", { method: "POST", body: JSON.stringify({ token: run.token, volume_ml: Number(data.get("volume_ml")) }) });
+      dialog.close(); await loadState(); currentSetupView = "dosing"; showToast(`Kanal ${run.channel} kalibrasyonu ölçümden kaydedildi.`);
+    },
+  });
 }
 
 function openDialog({ kicker, title, body, submitLabel, onSubmit, secondaryLabel = "Vazgeç" }) {

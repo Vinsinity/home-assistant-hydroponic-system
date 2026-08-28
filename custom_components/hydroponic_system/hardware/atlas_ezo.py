@@ -55,15 +55,26 @@ class SmbusTransport:
     """Linux I2C transport backed by smbus2."""
 
     def __init__(self, bus_number: int) -> None:
-        from smbus2 import SMBus, i2c_msg  # Imported only on supported hosts.
+        try:
+            from smbus2 import SMBus, i2c_msg  # Imported only on supported hosts.
+        except ImportError:
+            from .linux_i2c import LinuxI2CBus
 
-        self._bus = SMBus(bus_number)
-        self._message = i2c_msg
+            self._bus = LinuxI2CBus(bus_number)
+            self._message = None
+        else:
+            self._bus = SMBus(bus_number)
+            self._message = i2c_msg
 
     def write(self, address: int, payload: bytes) -> None:
-        self._bus.i2c_rdwr(self._message.write(address, payload))
+        if self._message is None:
+            self._bus.write(address, payload)
+        else:
+            self._bus.i2c_rdwr(self._message.write(address, payload))
 
     def read(self, address: int, length: int) -> bytes:
+        if self._message is None:
+            return self._bus.read(address, length)
         message = self._message.read(address, length)
         self._bus.i2c_rdwr(message)
         return bytes(message)

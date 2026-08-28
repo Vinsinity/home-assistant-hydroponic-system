@@ -7,7 +7,9 @@ from datetime import date
 import hashlib
 import math
 import re
+import secrets
 from threading import RLock
+import time
 from typing import Any
 
 from custom_components.hydroponic_system.const import (
@@ -37,6 +39,7 @@ from custom_components.hydroponic_system.plant_catalog import (
 
 from . import __version__
 from .discovery import NetworkDiscovery
+from .hardware_gateway import I2CHardwareGateway
 from .storage import GrowAsistStore
 
 
@@ -89,12 +92,26 @@ def _text(value: Any, maximum: int, fallback: str = "") -> str:
     return str(value if value not in (None, "") else fallback).strip()[:maximum]
 
 
+def _required_number(
+    value: Any, *, field: str, low: float, high: float, integer: bool = False
+) -> int | float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field} sayı olmalı") from error
+    if not math.isfinite(number) or not low <= number <= high:
+        raise ValueError(f"{field} {low:g}–{high:g} arasında olmalı")
+    return int(round(number)) if integer else number
+
+
 class GrowAsistService:
     """Serialize state mutations and expose product-level operations."""
 
     def __init__(self, store: GrowAsistStore) -> None:
         self.store = store
         self._mutation_lock = RLock()
+        self._hardware_lock = RLock()
+        self._calibration_runs: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def _local_date(value: Any, *, field: str = "Tarih") -> str:
@@ -128,6 +145,7 @@ class GrowAsistService:
             "hardware": deepcopy(state.get("hardware", {})),
             "assistant_settings": deepcopy(state.get("assistant_settings", {})),
             "device_registry": deepcopy(state.get("device_registry", {})),
+            "i2c_registry": deepcopy(state.get("i2c_registry", {})),
             "stage_labels": STAGE_LABELS,
             "storage": self.store.health(),
         }
@@ -705,6 +723,271 @@ class GrowAsistService:
             saved = self.store.save_state(state)
             return deepcopy(saved["hardware"])
 
+    def discover_i2c(self, _payload: dict[str, Any]) -> dict[str, Any]:
+        """Discover the Raspberry Pi bus without changing any device output."""
+        initial = self.store.load_state()
+        hardware = initial.get("hardware", {})
+        bus_number = int(hardware.get("i2c_bus", 1))
+        result = I2CHardwareGateway(bus_number).scan(
+            hardware.get("device_assignments", [])
+        )
+        with self._mutation_lock:
+            state = self.store.load_state()
+            registry = state.setdefault("i2c_registry", {})
+            registry.update({
+                "schema_version": 1,
+                "health": deepcopy(result["health"]),
+                "candidates": deepcopy(result["candidates"]),
+                "last_scan": deepcopy(result["last_scan"]),
+            })
+            registry.setdefault("retired_assignments", [])
+            state["engine_enabled"] = False
+            saved = self.store.save_state(state)
+            return deepcopy(saved["i2c_registry"])
+
+    def enroll_i2c_device(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Approve one physically discovered I2C device; addresses are never typed."""
+        with self._mutation_lock:
+            state = self.store.load_state()
+            registry = state.setdefault("i2c_registry", {})
+            candidates = registry.setdefault("candidates", {})
+            candidate_id = str(payload.get("candidate_id") or "")
+            candidate = candidates.get(candidate_id)
+            if not isinstance(candidate, dict):
+                raise ValueError("Seçilen kablolu cihaz son taramada bulunamadı")
+            if not candidate.get("online") or not candidate.get("supported"):
+                raise ValueError("Cihaz çevrimiçi ve destekleniyor olmadan eklenemez")
+
+            suggested = str(candidate.get("suggested_driver") or "")
+            driver = str(payload.get("driver") or suggested)
+            if candidate.get("driver_locked"):
+                driver = suggested
+            if driver not in _HARDWARE_DRIVERS:
+                raise ValueError("Bu kart için geçerli bir sürücü seçin")
+            if candidate.get("requires_driver_confirmation") and driver not in {
+                "waveshare_motor_hat", "pca9685_generic",
+            }:
+                raise ValueError("PCA9685 kart tipini doğrulayın")
+
+            hardware = deepcopy(state.get("hardware", {}))
+            assignments = hardware.setdefault("device_assignments", [])
+            address = int(candidate["address"])
+            existing = next(
+                (item for item in assignments if int(item.get("address", -1)) == address),
+                None,
+            )
+            retired_match = next((
+                item for item in reversed(registry.setdefault("retired_assignments", []))
+                if int(item.get("address", -1)) == address
+                and item.get("driver") == driver
+            ), None)
+            assignment = deepcopy(existing or retired_match or {})
+            assignment.pop("removed_at", None)
+            assignment.update({
+                "address": address,
+                "driver": driver,
+                "name": _text(
+                    payload.get("name"), 64,
+                    str(candidate.get("model") or f"I²C 0x{address:02X}"),
+                ),
+            })
+            if driver == "waveshare_motor_hat" and not assignment.get("channels"):
+                assignment["channels"] = [
+                    {"id": channel, "name": f"Motor {channel}", "fluid_id": "unassigned", "pump": {}, "calibration": None}
+                    for channel in ("A", "B")
+                ]
+            if driver != "waveshare_motor_hat":
+                assignment.pop("channels", None)
+            if existing is None:
+                assignments.append(assignment)
+            else:
+                assignments[assignments.index(existing)] = assignment
+
+            fluid_ids = {
+                str(item.get("id"))
+                for item in hardware.get("dosing_fluids", [])
+                if isinstance(item, dict) and item.get("id")
+            }
+            hardware["device_assignments"] = self._normalize_assignments(
+                assignments, fluid_ids
+            )
+            state["hardware"] = hardware
+            candidate.update({
+                "configured": True,
+                "enrolled": True,
+                "driver": driver,
+                "name": assignment["name"],
+                "status": "online",
+            })
+            state["engine_enabled"] = False
+            saved = self.store.save_state(state)
+            return deepcopy(next(
+                item for item in saved["hardware"]["device_assignments"]
+                if item["address"] == address
+            ))
+
+    def remove_i2c_device(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Detach one configuration while keeping its audit snapshot and fluids."""
+        with self._mutation_lock:
+            state = self.store.load_state()
+            hardware = deepcopy(state.get("hardware", {}))
+            assignments = hardware.get("device_assignments", [])
+            try:
+                address = int(payload.get("address"))
+            except (TypeError, ValueError) as error:
+                raise ValueError("Kaldırılacak cihaz adresi geçersiz") from error
+            removed = next(
+                (item for item in assignments if int(item.get("address", -1)) == address),
+                None,
+            )
+            if removed is None:
+                raise ValueError("Kaldırılacak kablolu cihaz bulunamadı")
+            hardware["device_assignments"] = [
+                item for item in assignments if int(item.get("address", -1)) != address
+            ]
+            state["hardware"] = hardware
+            registry = state.setdefault("i2c_registry", {})
+            retired = registry.setdefault("retired_assignments", [])
+            retired.append({**deepcopy(removed), "removed_at": utc_now()})
+            registry["retired_assignments"] = retired[-64:]
+            candidate_id = f"i2c_{int(hardware.get('i2c_bus', 1))}_{address:02x}"
+            candidate = registry.setdefault("candidates", {}).get(candidate_id)
+            if isinstance(candidate, dict):
+                candidate.update({
+                    "configured": False,
+                    "enrolled": False,
+                    "driver": "",
+                    "name": str(candidate.get("model") or ""),
+                    "status": "detected" if candidate.get("online") else "offline",
+                })
+            state["engine_enabled"] = False
+            saved = self.store.save_state(state)
+            return {
+                "removed": deepcopy(removed),
+                "hardware": deepcopy(saved["hardware"]),
+            }
+
+    @staticmethod
+    def _pump_channel(
+        state: dict[str, Any], address: int, channel_id: str
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        for assignment in state.get("hardware", {}).get("device_assignments", []):
+            if int(assignment.get("address", -1)) != address:
+                continue
+            if assignment.get("driver") != "waveshare_motor_hat":
+                raise ValueError("Seçilen cihaz bir Waveshare motor kartı değil")
+            for channel in assignment.get("channels", []):
+                if str(channel.get("id") or "").upper() == channel_id:
+                    return assignment, channel
+            break
+        raise ValueError("Seçilen pompa kanalı yapılandırılmamış")
+
+    @staticmethod
+    def _confirmed(payload: dict[str, Any]) -> None:
+        if payload.get("confirm") is not True:
+            raise ValueError("Fiziksel güvenlik onayı gerekli")
+
+    def test_pump(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Run a manually confirmed 1-3 second pump test and always stop."""
+        self._confirmed(payload)
+        try:
+            address = int(payload.get("address"))
+        except (TypeError, ValueError) as error:
+            raise ValueError("Motor kartı adresi geçersiz") from error
+        channel_id = str(payload.get("channel") or "").upper()
+        seconds = float(_required_number(
+            payload.get("seconds"), field="Test süresi", low=1, high=3
+        ))
+        speed = int(_required_number(
+            payload.get("speed"), field="Pompa hızı", low=20, high=100,
+            integer=True,
+        ))
+        state = self.store.load_state()
+        self._pump_channel(state, address, channel_id)
+        bus_number = int(state.get("hardware", {}).get("i2c_bus", 1))
+        with self._hardware_lock:
+            I2CHardwareGateway(bus_number).run_pump(
+                address, channel_id, seconds, speed
+            )
+        return {
+            "address": address,
+            "channel": channel_id,
+            "seconds": seconds,
+            "speed": speed,
+            "stopped": True,
+        }
+
+    def start_pump_calibration(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Run one measured calibration interval and issue a short-lived receipt."""
+        self._confirmed(payload)
+        try:
+            address = int(payload.get("address"))
+        except (TypeError, ValueError) as error:
+            raise ValueError("Motor kartı adresi geçersiz") from error
+        channel_id = str(payload.get("channel") or "").upper()
+        seconds = float(_required_number(
+            payload.get("seconds"), field="Kalibrasyon süresi", low=2, high=30
+        ))
+        speed = int(_required_number(
+            payload.get("speed"), field="Pompa hızı", low=20, high=100,
+            integer=True,
+        ))
+        state = self.store.load_state()
+        self._pump_channel(state, address, channel_id)
+        bus_number = int(state.get("hardware", {}).get("i2c_bus", 1))
+        with self._hardware_lock:
+            I2CHardwareGateway(bus_number).run_pump(
+                address, channel_id, seconds, speed
+            )
+        token = secrets.token_urlsafe(24)
+        with self._mutation_lock:
+            self._calibration_runs[token] = {
+                "address": address,
+                "channel": channel_id,
+                "seconds": seconds,
+                "speed": speed,
+                "expires_at": time.monotonic() + 600,
+            }
+        return {
+            "token": token,
+            "address": address,
+            "channel": channel_id,
+            "seconds": seconds,
+            "speed": speed,
+            "stopped": True,
+        }
+
+    def complete_pump_calibration(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist measured ml/s only for a just-completed physical run."""
+        token = str(payload.get("token") or "")
+        volume = float(_required_number(
+            payload.get("volume_ml"), field="Ölçülen hacim", low=0.01, high=500
+        ))
+        with self._mutation_lock:
+            run = self._calibration_runs.pop(token, None)
+            if not run or float(run["expires_at"]) < time.monotonic():
+                raise ValueError("Kalibrasyon ölçümü bulunamadı veya süresi doldu")
+            state = self.store.load_state()
+            _, channel = self._pump_channel(
+                state, int(run["address"]), str(run["channel"])
+            )
+            calibration = {
+                "seconds": float(run["seconds"]),
+                "volume_ml": round(volume, 3),
+                "speed": int(run["speed"]),
+                "flow_ml_s": round(volume / float(run["seconds"]), 5),
+                "calibrated_at": utc_now(),
+            }
+            channel["calibration"] = calibration
+            channel["calibration_status"] = "measured"
+            channel.setdefault("pump", {})["verified"] = True
+            state["engine_enabled"] = False
+            saved = self.store.save_state(state)
+        _, saved_channel = self._pump_channel(
+            saved, int(run["address"]), str(run["channel"])
+        )
+        return deepcopy(saved_channel)
+
     def discover_network(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Discover read-only LAN candidates and persist the scan inventory."""
         timeout = _bounded_number(payload.get("timeout"), 3, 1, 8)
@@ -729,6 +1012,11 @@ class GrowAsistService:
                         if key in candidate:
                             enrolled[key] = deepcopy(candidate[key])
                     enrolled["online"] = True
+                    enrolled["connection_status"] = (
+                        "credentials_required"
+                        if enrolled.get("requires_auth")
+                        else "adapter_pending"
+                    )
                     continue
                 candidates[candidate_id] = {**deepcopy(candidate), "online": True}
             for candidate_id, candidate in candidates.items():
@@ -767,6 +1055,8 @@ class GrowAsistService:
             candidate = candidates.get(candidate_id) or devices.get(candidate_id)
             if not isinstance(candidate, dict):
                 raise ValueError("Seçilen ağ cihazı adayı bulunamadı")
+            if not candidate.get("supported"):
+                raise ValueError("Bu cihaz için henüz bağlantı sürücüsü yok")
             role = str(payload.get("role") or candidate.get("suggested_role") or "unassigned")
             if role not in allowed_roles:
                 raise ValueError("Bu cihaz rolü desteklenmiyor")
@@ -775,6 +1065,12 @@ class GrowAsistService:
                 "name": _text(payload.get("name"), 96, str(candidate.get("name") or "Ağ cihazı")),
                 "role": role,
                 "status": "enrolled",
+                "verified": False,
+                "connection_status": (
+                    "credentials_required"
+                    if candidate.get("requires_auth")
+                    else "adapter_pending"
+                ),
                 "enrolled_at": str(candidate.get("enrolled_at") or utc_now()),
             })
             devices[candidate_id] = device
@@ -783,3 +1079,27 @@ class GrowAsistService:
             registry.setdefault("assignments", {})[candidate_id] = {"role": role}
             saved = self.store.save_state(state)
             return deepcopy(saved["device_registry"]["devices"][candidate_id])
+
+    def remove_network_device(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Remove an approved role but retain a visible discovery candidate."""
+        with self._mutation_lock:
+            state = self.store.load_state()
+            registry = state.setdefault("device_registry", {})
+            devices = registry.setdefault("devices", {})
+            candidates = registry.setdefault("candidates", {})
+            candidate_id = str(payload.get("candidate_id") or "")
+            device = devices.pop(candidate_id, None)
+            if not isinstance(device, dict):
+                raise ValueError("Kaldırılacak ağ cihazı bulunamadı")
+            candidate = deepcopy(device)
+            for key in ("role", "enrolled_at", "verified", "connection_status"):
+                candidate.pop(key, None)
+            candidate["status"] = "candidate"
+            candidates[candidate_id] = candidate
+            registry.setdefault("assignments", {}).pop(candidate_id, None)
+            retired = registry.setdefault("retired_devices", [])
+            retired.append({**deepcopy(device), "removed_at": utc_now()})
+            registry["retired_devices"] = retired[-64:]
+            state["engine_enabled"] = False
+            saved = self.store.save_state(state)
+            return deepcopy(saved["device_registry"])

@@ -1,6 +1,6 @@
 [Unit]
 Description=GrowAsist local cultivation service
-After=growasist-firstboot.service network.target
+After=systemd-modules-load.service growasist-firstboot.service network.target
 Wants=growasist-firstboot.service
 
 [Service]

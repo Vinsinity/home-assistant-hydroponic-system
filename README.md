@@ -46,10 +46,13 @@ control remains disabled in this slice.
 On the Raspberry Pi appliance, open `http://<raspberry-pi-ip>` and enter the
 first-boot token. Container development remains on port `8080`. Home Assistant
 is not required by this runtime. System → Hardware now performs read-only
-Shelly, TP-Link/Tapo, Tuya-candidate, and SSDP discovery and requires explicit
-user enrolment into the device registry. Authentication, monitoring, and
-equipment control remain disabled until each native adapter and the
-deterministic safety layer are implemented.
+Atlas/PCA9685 I2C and Shelly, TP-Link/Tapo, Tuya-candidate, and SSDP discovery.
+I2C addresses come from the physical bus rather than a manual form. Every
+candidate requires explicit enrolment; PCA9685-compatible responses also require
+the user to confirm the attached board type. Network authentication and
+telemetry adapters remain pending. Automatic control remains disabled; the only
+standalone actuator path is a confirmed, bounded manual pump test/calibration
+that verifies the Motor HAT immediately before running and always stops it.
 
 ## Existing Home Assistant adapter (0.32.0)
 

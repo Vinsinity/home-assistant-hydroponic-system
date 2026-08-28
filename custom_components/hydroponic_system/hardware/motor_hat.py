@@ -41,9 +41,14 @@ class WaveshareMotorHatController:
 
     def __init__(self, bus_number: int = 1, address: int = 0x40, bus=None) -> None:
         if bus is None:
-            from smbus2 import SMBus
+            try:
+                from smbus2 import SMBus
+            except ImportError:
+                from .linux_i2c import LinuxI2CBus
 
-            bus = SMBus(bus_number)
+                bus = LinuxI2CBus(bus_number)
+            else:
+                bus = SMBus(bus_number)
         self._bus = bus
         self.address = address
 
@@ -101,9 +106,14 @@ class MotorHatInventory:
     """Inspect HAT controller registers without writing or moving motors."""
 
     def __init__(self, bus_number: int = 1) -> None:
-        from smbus2 import SMBus
+        try:
+            from smbus2 import SMBus
+        except ImportError:
+            from .linux_i2c import LinuxI2CBus
 
-        self._bus = SMBus(bus_number)
+            self._bus = LinuxI2CBus(bus_number)
+        else:
+            self._bus = SMBus(bus_number)
 
     def close(self) -> None:
         self._bus.close()

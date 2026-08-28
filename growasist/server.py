@@ -156,8 +156,15 @@ def build_handler(
                     "/api/v1/plants": application.update_plant,
                     "/api/v1/nutrients/catalog/add": application.add_catalog_nutrient,
                     "/api/v1/hardware": application.update_hardware,
+                    "/api/v1/i2c/discover": application.discover_i2c,
+                    "/api/v1/i2c/enroll": application.enroll_i2c_device,
+                    "/api/v1/i2c/remove": application.remove_i2c_device,
                     "/api/v1/network/discover": application.discover_network,
                     "/api/v1/network/enroll": application.enroll_network_device,
+                    "/api/v1/network/remove": application.remove_network_device,
+                    "/api/v1/dosing/test": application.test_pump,
+                    "/api/v1/dosing/calibration/start": application.start_pump_calibration,
+                    "/api/v1/dosing/calibration/complete": application.complete_pump_calibration,
                 }
                 operation = routes.get(path)
                 if operation is None:
@@ -196,6 +203,12 @@ def serve(
         raise ValueError("A non-empty API token is required")
     store.initialize()
     service = GrowAsistService(store)
+    try:
+        service.discover_i2c({"automatic": True})
+    except Exception as error:
+        # Hardware availability must remain observable in the UI without making
+        # the journal application unavailable.
+        print(f"I2C startup discovery failed: {type(error).__name__}: {error}")
     server = ThreadingHTTPServer(
         (host, port), build_handler(store, api_token, service)
     )

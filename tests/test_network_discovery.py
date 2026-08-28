@@ -119,6 +119,15 @@ def test_discovery_candidates_require_explicit_enrollment(tmp_path, monkeypatch)
 
     assert enrolled["status"] == "enrolled"
     assert enrolled["role"] == "light_dimmer"
+    assert enrolled["verified"] is False
+    assert enrolled["connection_status"] == "adapter_pending"
     assert "shelly_aabbccddeeff" in registry["devices"]
     assert "shelly_aabbccddeeff" not in registry["candidates"]
     assert service.bootstrap()["engine_enabled"] is False
+
+    removed = service.remove_network_device({
+        "candidate_id": "shelly_aabbccddeeff",
+    })
+    assert "shelly_aabbccddeeff" not in removed["devices"]
+    assert "shelly_aabbccddeeff" in removed["candidates"]
+    assert removed["retired_devices"][0]["role"] == "light_dimmer"
