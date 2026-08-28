@@ -77,10 +77,11 @@ def default_state() -> dict[str, Any]:
             ],
         },
         "device_registry": {
-            "schema_version": 2,
+            "schema_version": 3,
             "devices": {},
             "candidates": {},
             "assignments": {},
+            "identity_overrides": {},
             "last_scan": None,
         },
         "i2c_registry": {

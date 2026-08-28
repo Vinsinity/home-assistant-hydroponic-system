@@ -77,6 +77,19 @@ _HARDWARE_DRIVERS = {
 }
 
 
+def _network_identity_anchor(item: dict[str, Any]) -> str:
+    mac = "".join(character for character in str(item.get("mac") or "").upper() if character.isalnum())
+    return f"mac:{mac}" if len(mac) == 12 else f"id:{str(item.get('id') or '')}"
+
+
+def _same_network_device(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_anchor = _network_identity_anchor(left)
+    right_anchor = _network_identity_anchor(right)
+    if left_anchor.startswith("mac:") and left_anchor == right_anchor:
+        return True
+    return bool(left.get("host") and left.get("host") == right.get("host"))
+
+
 def _bounded_number(value: Any, default: Any, low: float, high: float, integer: bool = False) -> int | float:
     try:
         number = float(value)
@@ -995,19 +1008,40 @@ class GrowAsistService:
         with self._mutation_lock:
             state = self.store.load_state()
             registry = state.setdefault("device_registry", {})
-            registry["schema_version"] = 2
+            registry["schema_version"] = 3
             devices = registry.setdefault("devices", {})
             candidates = registry.setdefault("candidates", {})
+            overrides = registry.setdefault("identity_overrides", {})
             seen_ids = set()
             for candidate in result["candidates"]:
+                candidate = deepcopy(candidate)
+                override = overrides.get(_network_identity_anchor(candidate))
+                if isinstance(override, dict):
+                    for key in ("vendor", "model", "name", "category"):
+                        if override.get(key):
+                            candidate[key] = deepcopy(override[key])
+                    candidate["identity_source"] = "user_confirmed"
+                    candidate["identity_confidence"] = 100
+                    candidate["supported"] = True
+                    candidate["evidence"] = list(dict.fromkeys([
+                        *(candidate.get("evidence") or []), "Kullanıcı tarafından doğrulandı"
+                    ]))[:24]
                 candidate_id = str(candidate["id"])
-                seen_ids.add(candidate_id)
-                if candidate_id in devices:
+                matched_device_id = next(
+                    (device_id for device_id, item in devices.items() if _same_network_device(item, candidate)),
+                    None,
+                )
+                if matched_device_id is not None:
+                    candidate_id = matched_device_id
+                    candidate["id"] = candidate_id
+                    seen_ids.add(candidate_id)
                     enrolled = devices[candidate_id]
                     for key in (
                         "host", "port", "ports", "mac", "model", "firmware",
                         "generation", "capabilities", "supported", "requires_auth",
-                        "source", "last_seen",
+                        "source", "last_seen", "hostname", "manufacturer", "protocol",
+                        "discovery_methods", "identity_confidence", "identity_source",
+                        "evidence", "category", "adapter_available", "mac_local",
                     ):
                         if key in candidate:
                             enrolled[key] = deepcopy(candidate[key])
@@ -1017,7 +1051,17 @@ class GrowAsistService:
                         if enrolled.get("requires_auth")
                         else "adapter_pending"
                     )
+                    for stale_id, stale in list(candidates.items()):
+                        if _same_network_device(stale, candidate):
+                            candidates.pop(stale_id, None)
                     continue
+                matched_candidate_id = next(
+                    (item_id for item_id, item in candidates.items() if _same_network_device(item, candidate)),
+                    None,
+                )
+                if matched_candidate_id and matched_candidate_id != candidate_id:
+                    candidates.pop(matched_candidate_id, None)
+                seen_ids.add(candidate_id)
                 candidates[candidate_id] = {**deepcopy(candidate), "online": True}
             for candidate_id, candidate in candidates.items():
                 if candidate_id not in seen_ids:
@@ -1026,11 +1070,7 @@ class GrowAsistService:
                 if device_id not in seen_ids:
                     device["online"] = False
             registry["last_scan"] = {
-                key: deepcopy(result[key])
-                for key in (
-                    "started_at", "finished_at", "network", "local_ip",
-                    "candidate_count", "warnings",
-                )
+                key: deepcopy(value) for key, value in result.items() if key != "candidates"
             }
             saved = self.store.save_state(state)
             saved_registry = saved["device_registry"]
@@ -1046,6 +1086,7 @@ class GrowAsistService:
             "unassigned", "environment_sensor", "co2_sensor", "light_dimmer",
             "light_power", "outlet_bank", "humidifier",
         }
+        allowed_vendors = {"Shelly", "Tuya", "TP-Link / Tapo", "Dreo", "Matter", "Diğer"}
         with self._mutation_lock:
             state = self.store.load_state()
             registry = state.setdefault("device_registry", {})
@@ -1055,12 +1096,30 @@ class GrowAsistService:
             candidate = candidates.get(candidate_id) or devices.get(candidate_id)
             if not isinstance(candidate, dict):
                 raise ValueError("Seçilen ağ cihazı adayı bulunamadı")
-            if not candidate.get("supported"):
-                raise ValueError("Bu cihaz için henüz bağlantı sürücüsü yok")
+            manual_confirmation = bool(payload.get("confirm_identity"))
+            requested_vendor = _text(payload.get("vendor"), 64, str(candidate.get("vendor") or "Unknown"))
+            requested_model = _text(payload.get("model"), 96, str(candidate.get("model") or ""))
+            if not candidate.get("supported") and not manual_confirmation:
+                raise ValueError("Cihazın marka/model kimliğini doğrulayın")
+            if manual_confirmation and requested_vendor not in allowed_vendors:
+                raise ValueError("Seçilen cihaz üreticisi desteklenmiyor")
             role = str(payload.get("role") or candidate.get("suggested_role") or "unassigned")
             if role not in allowed_roles:
                 raise ValueError("Bu cihaz rolü desteklenmiyor")
             device = deepcopy(candidate)
+            if manual_confirmation:
+                device.update({
+                    "vendor": requested_vendor,
+                    "model": requested_model,
+                    "identity_source": "user_confirmed",
+                    "identity_confidence": 100,
+                    "supported": True,
+                    "category": "grow_iot" if requested_vendor != "Diğer" else "other",
+                })
+                evidence = list(dict.fromkeys([
+                    *(device.get("evidence") or []), "Kullanıcı tarafından doğrulandı"
+                ]))[:24]
+                device["evidence"] = evidence
             device.update({
                 "name": _text(payload.get("name"), 96, str(candidate.get("name") or "Ağ cihazı")),
                 "role": role,
@@ -1075,8 +1134,16 @@ class GrowAsistService:
             })
             devices[candidate_id] = device
             candidates.pop(candidate_id, None)
-            registry["schema_version"] = 2
+            registry["schema_version"] = 3
             registry.setdefault("assignments", {})[candidate_id] = {"role": role}
+            if manual_confirmation:
+                registry.setdefault("identity_overrides", {})[_network_identity_anchor(device)] = {
+                    "vendor": device["vendor"],
+                    "model": device["model"],
+                    "name": device["name"],
+                    "category": device["category"],
+                    "confirmed_at": utc_now(),
+                }
             saved = self.store.save_state(state)
             return deepcopy(saved["device_registry"]["devices"][candidate_id])
 

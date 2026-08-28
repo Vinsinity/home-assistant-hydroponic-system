@@ -79,7 +79,7 @@ def test_image_contains_release_and_sync_dependencies() -> None:
 def test_setup_tools_remain_visible_and_addressable() -> None:
     shell = _text("growasist/web/index.html")
     application = _text("growasist/web/app.js")
-    for module in ("overview", "plants", "nutrients", "hardware", "dosing"):
+    for module in ("overview", "plants", "nutrients", "hardware", "iot", "dosing"):
         assert f'data-setup-shortcut="{module}"' in shell
         assert f'"{module}"' in application
     assert 'data-setup-shortcut="profiles"' not in shell
@@ -89,6 +89,8 @@ def test_setup_tools_remain_visible_and_addressable() -> None:
     assert "/api/v1/i2c/discover" in application
     assert "/api/v1/i2c/enroll" in application
     assert "/api/v1/i2c/remove" in application
+    assert "function renderIoT" in application
+    assert "YEREL AĞ ENVANTERİ" in application
     assert "/api/v1/dosing/calibration/start" in application
     assert "data-add-hardware" not in application
     assert "I²C adresi" not in application

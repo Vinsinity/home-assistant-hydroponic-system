@@ -25,6 +25,7 @@ mmdebstrap:
     - curl
     - e2fsprogs
     - i2c-tools
+    - ieee-data
     - python3
     - rsync
     - sqlite3

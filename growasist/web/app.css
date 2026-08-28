@@ -353,6 +353,45 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
 .fingerprint-grid div { padding: 11px; background: var(--canopy); }
 .fingerprint-grid dt { color: var(--muted); font: 8px var(--data); text-transform: uppercase; }
 .fingerprint-grid dd { margin: 5px 0 0; font-size: 9px; }
+.iot-workbench { padding: 24px 0 40px; }
+.iot-scan-hero { display: grid; grid-template-columns: 118px minmax(260px,1fr) minmax(300px,.75fr); align-items: center; gap: 28px; padding: 25px 0 28px; border-bottom: 1px solid var(--line-bright); }
+.network-radar { position: relative; display: grid; width: 104px; height: 104px; place-items: center; overflow: hidden; border: 1px solid var(--line-bright); border-radius: 50%; color: var(--water); font: 10px var(--data); }
+.network-radar::before, .network-radar::after, .network-radar i { position: absolute; content: ""; border: 1px solid rgba(53,183,209,.2); border-radius: 50%; }
+.network-radar::before { inset: 17px; }
+.network-radar::after { inset: 34px; }
+.network-radar i:first-child { top: 51px; right: 0; left: 0; border-width: 1px 0 0; border-radius: 0; }
+.network-radar i:nth-child(2) { top: 0; bottom: 0; left: 51px; border-width: 0 0 0 1px; border-radius: 0; }
+.network-radar.has-scan span::before { position: absolute; top: 50%; left: 50%; width: 45px; height: 1px; content: ""; background: var(--water); opacity: .65; transform-origin: left center; animation: radar-sweep 4s linear infinite; }
+@keyframes radar-sweep { to { transform: rotate(360deg); } }
+.iot-scan-copy h3 { margin: 6px 0 7px; color: var(--mist); font: 23px var(--data); }
+.iot-scan-copy p { max-width: 610px; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.protocol-strip { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 15px; }
+.protocol-strip span { padding: 5px 8px; border: 1px solid var(--line); border-radius: 20px; color: var(--muted); font: 7px var(--data); }
+.protocol-strip b { color: var(--water); }
+.scan-actions { justify-self: stretch; }
+.scan-actions dl { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); margin: 0 0 13px; border: 1px solid var(--line); border-radius: 8px; }
+.scan-actions dl div { padding: 11px; border-right: 1px solid var(--line); }
+.scan-actions dl div:last-child { border-right: 0; }
+.scan-actions dt { color: var(--muted); font-size: 7px; }
+.scan-actions dd { margin: 5px 0 0; color: var(--mist); font: 17px var(--data); }
+.scan-actions button { width: 100%; }
+.iot-scan-note { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 11px 2px; border-bottom: 1px solid var(--line); color: var(--muted); font: 8px var(--data); }
+.iot-scan-note small { color: var(--bloom); font-size: 8px; }
+.iot-tools { display: grid; grid-template-columns: minmax(220px,1fr) 220px; gap: 12px; padding: 22px 0 10px; }
+.iot-tools label { display: grid; gap: 5px; color: var(--muted); font-size: 8px; }
+.iot-list-section { padding-top: 18px; }
+.approved-iot { margin-top: 5px; padding: 10px 14px 15px; border-left: 2px solid var(--leaf); background: rgba(105,197,150,.025); }
+.network-inventory { margin-top: 26px; border-top: 1px solid var(--line-bright); }
+.network-inventory > summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 2px; color: var(--mist); cursor: pointer; font-size: 10px; }
+.network-inventory > summary small { color: var(--muted); font-size: 8px; }
+.iot-workbench .network-row { grid-template-columns: 42px minmax(190px,1.15fr) minmax(130px,.65fr) minmax(180px,1fr) auto; gap: 14px; padding: 14px 8px; }
+.iot-workbench .network-row > span:nth-child(4), .iot-workbench .network-row > em { grid-column: auto; }
+.iot-workbench .network-row > span:nth-child(4) { display: grid; gap: 5px; }
+.iot-workbench .network-row > span:nth-child(4) small { overflow: hidden; margin: 0; text-overflow: ellipsis; white-space: nowrap; }
+.identity-warning { margin: 0 0 18px; padding: 12px 14px; border-left: 2px solid var(--bloom); color: #d5c29d; background: rgba(228,170,78,.045); font-size: 9px; line-height: 1.5; }
+.identity-confirm { display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 9px !important; padding: 11px; border: 1px solid var(--line); border-radius: 7px; }
+.identity-confirm input { width: 16px; height: 16px; }
+.evidence-list { display: grid; gap: 6px; margin: 14px 0; padding-left: 18px; color: var(--muted); font-size: 9px; }
 .safety-banner { border-color: var(--leaf); background: rgba(105,197,150,.035); }
 .safety-banner b, .safety-banner small { display: block; }
 .safety-banner b { color: var(--leaf); font-size: 10px; }
@@ -441,6 +480,14 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
   .bus-metrics { grid-column: 1/-1; border-top: 1px solid var(--line); border-left: 0; padding-top: 13px; }
   .motor-channel { grid-template-columns: 1fr; }
   .network-columns { grid-template-columns: 1fr; }
+  .iot-scan-hero { grid-template-columns: 94px minmax(0,1fr); }
+  .network-radar { width: 84px; height: 84px; }
+  .network-radar::before { inset: 14px; }
+  .network-radar::after { inset: 28px; }
+  .network-radar i:first-child { top: 41px; }
+  .network-radar i:nth-child(2) { left: 41px; }
+  .scan-actions { grid-column: 1/-1; }
+  .iot-workbench .network-row { grid-template-columns: 38px minmax(160px,1fr) minmax(120px,.6fr) minmax(150px,.8fr) auto; }
   .catalog-product { grid-template-columns: 110px minmax(160px,1fr) minmax(150px,.85fr) 55px; }
   .catalog-product > span:nth-child(4) { display: none; }
 }
@@ -508,6 +555,16 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
   .scan-summary { align-items: flex-start; flex-direction: column; }
   .network-row { grid-template-columns: 36px minmax(0,1fr); }
   .network-row > span:nth-child(3), .network-row > span:nth-child(4), .network-row > em { grid-column: 2; }
+  .iot-scan-hero { grid-template-columns: 1fr; gap: 16px; }
+  .network-radar { width: 78px; height: 78px; }
+  .network-radar i:first-child { top: 38px; }
+  .network-radar i:nth-child(2) { left: 38px; }
+  .iot-scan-note { align-items: flex-start; flex-direction: column; }
+  .iot-tools { grid-template-columns: 1fr; }
+  .network-inventory > summary { align-items: flex-start; flex-direction: column; }
+  .iot-workbench .network-row { grid-template-columns: 36px minmax(0,1fr); gap: 8px 11px; }
+  .iot-workbench .network-row > span:nth-child(3), .iot-workbench .network-row > span:nth-child(4), .iot-workbench .network-row > em { grid-column: 2; }
+  .iot-workbench .network-row > span:nth-child(4) small { white-space: normal; }
   .fingerprint-grid { grid-template-columns: 1fr; }
   .start-fluid-list { grid-template-columns: 1fr; }
   .page-actions { align-items: flex-start; flex-direction: column; }
@@ -517,4 +574,5 @@ input:focus, select:focus, textarea:focus, button:focus-visible { border-color: 
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+  .network-radar.has-scan span::before { animation: none !important; }
 }

@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import struct
 
+import pytest
+
 from growasist.discovery import (
+    NetworkDiscovery,
+    OuiRegistry,
+    _candidate,
     _dns_name,
     _infer_shelly_capabilities,
     _parse_mdns_packet,
     _shelly_candidate,
     _tplink_candidate,
+    _tuya_packet_kind,
+    _xml_values,
     _xor_decrypt,
     _xor_encrypt,
 )
@@ -69,6 +77,64 @@ def test_vendor_discovery_payloads_are_reduced_to_safe_candidates():
 def test_shelly_capability_inference_keeps_dimmer_and_sensor_roles_separate():
     assert _infer_shelly_capabilities("Shelly 0-10V Dimmer", "dimmer")[1] == "light_dimmer"
     assert _infer_shelly_capabilities("Shelly H&T Gen3", "HT")[1] == "environment_sensor"
+
+
+def test_ieee_oui_registry_and_upnp_identity_are_reduced_to_display_fields(tmp_path):
+    registry_file = tmp_path / "oui.csv"
+    registry_file.write_text(
+        "Registry,Assignment,Organization Name,Organization Address\n"
+        "MA-L,AABBCC,Example Device Company,Secret office\n",
+        encoding="utf-8",
+    )
+    registry = OuiRegistry(paths=(registry_file,))
+    assert registry.lookup("AA:BB:CC:12:34:56") == "Example Device Company"
+    assert registry.lookup("02:00:00:00:00:01") == ""
+
+    identity = _xml_values(b"""<?xml version='1.0'?>
+        <root xmlns='urn:schemas-upnp-org:device-1-0'><device>
+        <friendlyName>Grow room plug</friendlyName><manufacturer>Example</manufacturer>
+        <modelName>P100</modelName><serialNumber>must-not-leak</serialNumber>
+        </device></root>""")
+    assert identity == {"name": "Grow room plug", "manufacturer": "Example", "model": "P100"}
+
+
+def test_tuya_frame_recognition_does_not_attempt_to_decrypt_payloads():
+    assert _tuya_packet_kind(b"\x00\x00\x55\xaa" + b"encrypted") == "tuya_55aa"
+    assert _tuya_packet_kind(b"\x00\x00\x66\x99" + b"encrypted") == "tuya_6699"
+    assert _tuya_packet_kind(b"not-tuya") == ""
+
+
+def test_discovery_merge_keeps_strong_identity_and_all_evidence():
+    target = {}
+    NetworkDiscovery._merge(target, _candidate(
+        "10.1.1.50", mac="AA:BB:CC:DD:EE:FF", evidence=["Ağ komşusu"], methods=["arp_neighbor"]
+    ))
+    NetworkDiscovery._merge(target, _candidate(
+        "10.1.1.50", vendor="Shelly", model="H&T Gen3", mac="AA:BB:CC:DD:EE:FF",
+        protocol="shelly_rpc", confidence=98, evidence=["Shelly kimlik yanıtı"],
+        methods=["shelly_http"], supported=True,
+    ))
+    merged = next(iter(target.values()))
+    assert merged["vendor"] == "Shelly"
+    assert merged["identity_confidence"] == 98
+    assert merged["discovery_methods"] == ["arp_neighbor", "shelly_http"]
+    assert merged["evidence"] == ["Ağ komşusu", "Shelly kimlik yanıtı"]
+
+
+def test_subnet_inventory_includes_neighbors_without_open_tcp_ports(monkeypatch):
+    discovery = NetworkDiscovery.__new__(NetworkDiscovery)
+    discovery.local_ip = "10.1.1.1"
+    discovery.network = ipaddress.ip_network("10.1.1.0/30")
+    discovery.oui = OuiRegistry(paths=())
+    monkeypatch.setattr(NetworkDiscovery, "_open_ports", staticmethod(lambda host: (host, [])))
+    monkeypatch.setattr(NetworkDiscovery, "_arp_table", staticmethod(lambda: {"10.1.1.2": "A8:29:48:12:34:56"}))
+
+    candidates = discovery._scan_subnet()
+
+    assert len(candidates) == 1
+    assert candidates[0]["host"] == "10.1.1.2"
+    assert candidates[0]["manufacturer"] == "TP-Link Technologies"
+    assert candidates[0]["discovery_methods"] == ["arp_neighbor"]
 
 
 def test_discovery_candidates_require_explicit_enrollment(tmp_path, monkeypatch):
@@ -131,3 +197,55 @@ def test_discovery_candidates_require_explicit_enrollment(tmp_path, monkeypatch)
     assert "shelly_aabbccddeeff" not in removed["devices"]
     assert "shelly_aabbccddeeff" in removed["candidates"]
     assert removed["retired_devices"][0]["role"] == "light_dimmer"
+
+
+def test_unknown_device_requires_confirmation_and_identity_survives_rescan(tmp_path, monkeypatch):
+    class FakeDiscovery:
+        def __init__(self, *, timeout):
+            pass
+
+        def scan(self):
+            return {
+                "started_at": "2026-08-28T10:00:00+00:00",
+                "finished_at": "2026-08-28T10:00:01+00:00",
+                "network": "10.1.1.0/24",
+                "local_ip": "10.1.1.130",
+                "candidate_count": 1,
+                "observed_host_count": 1,
+                "recognized_count": 0,
+                "grow_candidate_count": 0,
+                "protocol_counts": {"arp_neighbor": 1},
+                "duration_ms": 1000,
+                "warnings": [],
+                "candidates": [_candidate(
+                    "10.1.1.83", mac="70:68:71:4B:34:4E", name="FN-LINK Technology",
+                    manufacturer="FN-LINK Technology", confidence=48,
+                    evidence=["IEEE üreticisi: FN-LINK Technology"], methods=["arp_neighbor"],
+                )],
+            }
+
+    monkeypatch.setattr("growasist.service.NetworkDiscovery", FakeDiscovery)
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    candidate_id = next(iter(service.discover_network({"timeout": 3})["candidates"]))
+
+    with pytest.raises(ValueError, match="marka/model"):
+        service.enroll_network_device({"candidate_id": candidate_id, "role": "humidifier"})
+
+    enrolled = service.enroll_network_device({
+        "candidate_id": candidate_id,
+        "name": "Ana nemlendirici",
+        "vendor": "Dreo",
+        "model": "Smart Humidifier",
+        "role": "humidifier",
+        "confirm_identity": True,
+    })
+    assert enrolled["vendor"] == "Dreo"
+    assert enrolled["identity_source"] == "user_confirmed"
+    assert enrolled["identity_confidence"] == 100
+
+    service.remove_network_device({"candidate_id": candidate_id})
+    rescanned = service.discover_network({"timeout": 3})
+    remembered = rescanned["candidates"][candidate_id]
+    assert remembered["vendor"] == "Dreo"
+    assert remembered["name"] == "Ana nemlendirici"
+    assert remembered["identity_source"] == "user_confirmed"

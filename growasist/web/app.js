@@ -44,7 +44,7 @@ const viewMeta = {
   journal: ["Yetiştirme", "Günlük"],
   setup: ["Sistem", "Alan ve ışık"],
 };
-const setupViewIds = new Set(["overview", "plants", "nutrients", "hardware", "dosing"]);
+const setupViewIds = new Set(["overview", "plants", "nutrients", "hardware", "iot", "dosing"]);
 
 let token = sessionStorage.getItem(TOKEN_KEY) || "";
 let state = null;
@@ -157,6 +157,8 @@ function syncNavigation() {
   document.querySelector('[data-rail-count="plants"]').textContent = `${plantOptions().length} tür`;
   document.querySelector('[data-rail-count="nutrients"]').textContent = `${state.hardware?.dosing_fluids?.length || 0} ürün`;
   document.querySelector('[data-rail-count="hardware"]').textContent = `${state.hardware?.device_assignments?.length || 0} cihaz`;
+  const iotCount = Object.values(state.device_registry?.devices || {}).length;
+  document.querySelector('[data-rail-count="iot"]').textContent = `${iotCount} tanımlı`;
 }
 
 function navigateTo(view, setupView = null) {
@@ -300,14 +302,16 @@ function renderSetup() {
     ["overview", "Alan ve ışık", "Yöntem, medya ve armatür"],
     ["plants", "Bitki kütüphanesi", `${plantOptions().length} tür`],
     ["nutrients", "Besinler", `${state.hardware?.dosing_fluids?.length || 0} ürün`],
-    ["hardware", "Donanım", `${state.hardware?.device_assignments?.length || 0} kablolu cihaz`],
+    ["hardware", "Yerel donanım", `${state.hardware?.device_assignments?.length || 0} kablolu cihaz`],
+    ["iot", "IoT cihazları", `${Object.values(state.device_registry?.devices || {}).length} tanımlı`],
     ["dosing", "Dozaj", "Pompa ve kalibrasyon"],
   ];
   const descriptions = {
     overview: ["Sistem", "Yöntemini, yetiştirme medyanı ve ışığını tanımla."],
     plants: ["Kütüphane", "Her bitkinin aşamalarını ve o aşamada kullandığın besinleri düzenle."],
     nutrients: ["Kütüphane", "Hazır ürünleri bul veya elindeki özel ürünü ekle."],
-    hardware: ["Sistem", "Kablolu ve ağdaki cihazlarını tanımla."],
+    hardware: ["Sistem", "Raspberry Pi üzerine kabloyla bağlanan kartları yönet."],
+    iot: ["Sistem", "Wi-Fi ve yerel ağ cihazlarını bul, doğrula ve rol ver."],
     dosing: ["Sistem", "Pompa bağlantılarını ve kalibrasyonlarını yönet."],
   };
   const [group, description] = descriptions[currentSetupView] || descriptions.overview;
@@ -325,6 +329,7 @@ function renderSetup() {
   if (currentSetupView === "plants") renderPlants(panel);
   else if (currentSetupView === "nutrients") renderNutrients(panel);
   else if (currentSetupView === "hardware") renderHardware(panel);
+  else if (currentSetupView === "iot") renderIoT(panel);
   else if (currentSetupView === "dosing") renderDosing(panel);
   else renderSetupOverview(panel);
 }
@@ -557,11 +562,6 @@ function renderHardware(panel) {
   const newI2cCandidates = i2cCandidates.filter((item) => item.online && !item.configured);
   const health = i2cRegistry.health || {};
   const i2cScan = i2cRegistry.last_scan;
-  const networkDevices = Object.values(state.device_registry?.devices || {});
-  const candidates = Object.values(state.device_registry?.candidates || {}).sort((left, right) => Number(right.online) - Number(left.online) || Number(right.supported) - Number(left.supported) || String(left.vendor).localeCompare(String(right.vendor)) || String(left.host).localeCompare(String(right.host), undefined, { numeric: true }));
-  const knownCandidates = candidates.filter((item) => item.supported);
-  const otherCandidates = candidates.filter((item) => !item.supported);
-  const lastScan = state.device_registry?.last_scan;
   const onlineCount = assignments.filter((item) => i2cCandidate(item.address)?.online).length;
   panel.innerHTML = `<section class="hardware-section wired-hardware"><header class="section-head"><div><h3>Raspberry Pi bağlantı hattı</h3><small>Kartı bağla, tara ve bulunan cihazı onayla</small></div><button class="primary-button compact" type="button" data-i2c-scan>Donanımı tara</button></header>
       <div class="hardware-busline ${health.available ? "bus-online" : "bus-offline"}">
@@ -572,19 +572,11 @@ function renderHardware(panel) {
       <div class="subsection-label"><b>Tanımlı kablolu cihazlar</b><small>${assignments.length}</small></div>
       <div class="record-ledger">${assignments.length ? assignments.map((item) => hardwareAssignmentRow(item, i2cCandidate(item.address))).join("") : '<p class="empty-list">Henüz tanımlı cihaz yok. Kartları Raspberry Pi üzerine bağlayıp tarayın.</p>'}</div>
       ${newI2cCandidates.length ? `<div class="detected-strip"><header><b>Yeni bulunanlar</b><small>Adres otomatik okundu; yalnızca kart tipini doğrulayın.</small></header><div class="record-ledger">${newI2cCandidates.map(hardwareCandidateRow).join("")}</div></div>` : ""}
-      <details class="advanced-settings"><summary>Bağlantı ayrıntıları</summary><form class="hardware-connection-form" data-hardware-base><label><span>I²C veri yolu</span><input name="i2c_bus" type="number" min="0" max="255" value="${html(hardware.i2c_bus ?? 1)}"></label><label><span>Okuma aralığı · saniye</span><input name="poll_interval" type="number" min="10" max="300" value="${html(hardware.poll_interval ?? 30)}"></label><button class="secondary-button" type="submit">Kaydet</button></form><p class="connection-footnote">Son tarama: ${html(i2cScan?.finished_at ? String(i2cScan.finished_at).replace("T", " ").slice(0, 19) : "—")}</p></details></section>
-    <section class="hardware-section network-discovery"><header class="section-head"><div><h3>Ağdaki cihazlar</h3><small>Shelly, Tapo ve desteklenen yerel ağ cihazları</small></div><button class="primary-button compact" type="button" data-network-scan>Ağı tara</button></header>
-      <div class="scan-summary"><span><b>${lastScan ? `${html(lastScan.candidate_count)} cihaz bulundu` : "Henüz tarama yapılmadı"}</b><small>${lastScan ? html(String(lastScan.finished_at || "").replace("T", " ").slice(0, 16)) : "Bulunan cihazları sen onaylamadan eklemeyiz."}</small></span>${lastScan?.warnings?.length ? `<em>${html(lastScan.warnings.join(" · "))}</em>` : ""}</div>
-      <div class="network-columns"><div><div class="subsection-label"><b>Bağlanabilir cihazlar</b><small>${knownCandidates.length}</small></div><div class="record-ledger">${knownCandidates.length ? knownCandidates.map(networkCandidateRow).join("") : '<p class="empty-list">Desteklenen yeni cihaz bulunamadı.</p>'}</div>${otherCandidates.length ? `<details class="other-devices"><summary>Tanımlanamayan veya henüz desteklenmeyen cihazlar <span>${otherCandidates.length}</span></summary><div class="record-ledger">${otherCandidates.map(networkCandidateRow).join("")}</div></details>` : ""}</div>
-      <div><div class="subsection-label"><b>Tanımlı cihazlar</b><small>${networkDevices.length}</small></div><div class="record-ledger">${networkDevices.length ? networkDevices.map(networkDeviceRow).join("") : '<p class="empty-list">Henüz onaylanmış ağ cihazı yok.</p>'}</div></div></div>
-    </section>`;
+      <details class="advanced-settings"><summary>Bağlantı ayrıntıları</summary><form class="hardware-connection-form" data-hardware-base><label><span>I²C veri yolu</span><input name="i2c_bus" type="number" min="0" max="255" value="${html(hardware.i2c_bus ?? 1)}"></label><label><span>Okuma aralığı · saniye</span><input name="poll_interval" type="number" min="10" max="300" value="${html(hardware.poll_interval ?? 30)}"></label><button class="secondary-button" type="submit">Kaydet</button></form><p class="connection-footnote">Son tarama: ${html(i2cScan?.finished_at ? String(i2cScan.finished_at).replace("T", " ").slice(0, 19) : "—")}</p></details></section>`;
   panel.querySelector("[data-hardware-base]").addEventListener("submit", saveHardwareBase);
   panel.querySelector("[data-i2c-scan]").addEventListener("click", scanI2C);
   panel.querySelectorAll("[data-hardware-address]").forEach((button) => button.addEventListener("click", () => { const item = assignments.find((entry) => entry.address === Number(button.dataset.hardwareAddress)); openI2CDeviceDialog(i2cCandidate(item.address), item); }));
   panel.querySelectorAll("[data-i2c-candidate]").forEach((button) => button.addEventListener("click", () => openI2CDeviceDialog(newI2cCandidates.find((item) => item.id === button.dataset.i2cCandidate))));
-  panel.querySelector("[data-network-scan]").addEventListener("click", scanNetwork);
-  panel.querySelectorAll("[data-network-candidate]").forEach((button) => button.addEventListener("click", () => openNetworkDeviceDialog(candidates.find((item) => item.id === button.dataset.networkCandidate))));
-  panel.querySelectorAll("[data-network-device]").forEach((button) => button.addEventListener("click", () => openNetworkDeviceDialog(networkDevices.find((item) => item.id === button.dataset.networkDevice))));
 }
 
 function hardwareAssignmentRow(item, candidate) {
@@ -596,15 +588,59 @@ function hardwareCandidateRow(item) {
   return `<button type="button" class="record-row hardware-row discovered" data-i2c-candidate="${html(item.id)}"><span class="record-code">${html(item.address_hex)}</span><span><b>${html(item.model || item.chip)}</b><small>${html(item.chip)}${item.firmware ? ` · ${html(item.firmware)}` : ""}</small></span><span class="support-state supported">Fiziksel olarak bulundu</span><em>Tanımla</em></button>`;
 }
 
+function renderIoT(panel) {
+  const registry = state.device_registry || {};
+  const devices = Object.values(registry.devices || {}).sort((left, right) => Number(right.online) - Number(left.online) || String(left.name).localeCompare(String(right.name)));
+  const candidates = Object.values(registry.candidates || {}).sort((left, right) => Number(right.online) - Number(left.online) || Number(right.identity_confidence || 0) - Number(left.identity_confidence || 0) || String(left.host).localeCompare(String(right.host), undefined, { numeric: true }));
+  const growCandidates = candidates.filter((item) => ["grow_iot", "possible_iot"].includes(item.category));
+  const inventory = candidates.filter((item) => !["grow_iot", "possible_iot"].includes(item.category));
+  const scan = registry.last_scan;
+  const protocolLabels = { shelly_http: "Shelly", shelly_mdns: "mDNS", tplink_udp: "Tapo", tuya_udp_broadcast: "Tuya", matter_mdns: "Matter", ssdp: "SSDP", upnp_description: "UPnP", arp_neighbor: "Ağ komşuları", tcp_probe: "Yerel portlar", http_mdns: "mDNS", homekit_mdns: "HomeKit" };
+  const methods = Object.entries(scan?.protocol_counts || {}).filter(([, count]) => count).map(([method, count]) => `<span>${html(protocolLabels[method] || method)} <b>${html(count)}</b></span>`).join("");
+  panel.innerHTML = `<section class="iot-workbench">
+    <header class="iot-scan-hero">
+      <div class="network-radar ${scan ? "has-scan" : ""}" aria-hidden="true"><i></i><i></i><span>RF</span></div>
+      <div class="iot-scan-copy"><span class="kicker">YEREL AĞ ENVANTERİ</span><h3>IoT cihazlarını bul</h3><p>Wi-Fi cihazlarını tek listede gör. Bir cihaz sen doğrulamadan yetiştirme sistemine eklenmez.</p><div class="protocol-strip">${methods || "<span>mDNS</span><span>SSDP</span><span>Tapo</span><span>Tuya</span><span>MAC üreticisi</span>"}</div></div>
+      <div class="scan-actions"><dl><div><dt>Ağda görülen</dt><dd>${html(scan?.observed_host_count ?? "—")}</dd></div><div><dt>Kimliği bulunan</dt><dd>${html(scan?.recognized_count ?? "—")}</dd></div><div><dt>IoT adayı</dt><dd>${html(scan?.grow_candidate_count ?? "—")}</dd></div></dl><button class="primary-button" type="button" data-network-scan>${scan ? "Yeniden tara" : "Ağı tara"}</button></div>
+    </header>
+    <div class="iot-scan-note"><span>${scan ? `Son tarama ${html(String(scan.finished_at || "").replace("T", " ").slice(0, 16))} · ${html(scan.duration_ms || 0)} ms` : "İlk taramada tüm yerel ağ komşuları envantere alınır."}</span><small>Pilli sensörleri uyandırıp tarayın; uyuyan cihazların önceki kaydı korunur.</small></div>
+    <div class="iot-tools"><label><span>Cihaz ara</span><input type="search" placeholder="Ad, üretici, IP veya MAC" data-iot-search></label><label><span>Göster</span><select data-iot-filter><option value="all">Tüm cihazlar</option><option value="grow">IoT adayları</option><option value="identified">Kimliği bulunanlar</option><option value="unknown">Kimliği belirsizler</option></select></label></div>
+    ${devices.length ? `<section class="iot-list-section approved-iot"><div class="subsection-label"><b>Tanımladığım cihazlar</b><small>${devices.length}</small></div><div class="record-ledger">${devices.map(networkDeviceRow).join("")}</div></section>` : ""}
+    <section class="iot-list-section"><div class="subsection-label"><b>Yetiştirmede kullanılabilecek adaylar</b><small>${growCandidates.length}</small></div><div class="record-ledger">${growCandidates.length ? growCandidates.map(networkCandidateRow).join("") : '<p class="empty-list">Henüz bir IoT adayı bulunamadı. Cihazı uyandırıp yeniden tarayın.</p>'}</div></section>
+    <details class="network-inventory" open><summary><span>Ağdaki diğer cihazlar</span><small>${inventory.length} cihaz · yanlış marka tahmini yapılmadan listelenir</small></summary><div class="record-ledger">${inventory.length ? inventory.map(networkCandidateRow).join("") : '<p class="empty-list">Başka ağ cihazı görülmedi.</p>'}</div></details>
+  </section>`;
+  panel.querySelector("[data-network-scan]").addEventListener("click", scanNetwork);
+  panel.querySelectorAll("[data-network-candidate]").forEach((button) => button.addEventListener("click", () => openNetworkDeviceDialog(candidates.find((item) => item.id === button.dataset.networkCandidate))));
+  panel.querySelectorAll("[data-network-device]").forEach((button) => button.addEventListener("click", () => openNetworkDeviceDialog(devices.find((item) => item.id === button.dataset.networkDevice))));
+  const applyFilter = () => {
+    const query = panel.querySelector("[data-iot-search]").value.trim().toLocaleLowerCase("tr");
+    const filter = panel.querySelector("[data-iot-filter]").value;
+    panel.querySelectorAll("[data-iot-row]").forEach((row) => {
+      const matchesQuery = !query || row.dataset.iotSearch.includes(query);
+      const confidence = Number(row.dataset.iotConfidence || 0);
+      const category = row.dataset.iotCategory;
+      const matchesFilter = filter === "all" || (filter === "grow" && ["grow_iot","possible_iot"].includes(category)) || (filter === "identified" && confidence >= 70) || (filter === "unknown" && confidence < 70);
+      row.hidden = !(matchesQuery && matchesFilter);
+    });
+  };
+  panel.querySelector("[data-iot-search]").addEventListener("input", applyFilter);
+  panel.querySelector("[data-iot-filter]").addEventListener("change", applyFilter);
+}
+
 function networkCandidateRow(item) {
-  const support = !item.online ? "Son taramada görülmedi" : item.supported ? (item.requires_auth ? "Bulundu · giriş gerekli" : "Bulundu · bağlantı bekliyor") : "Sürücü henüz yok";
-  return `<button type="button" class="network-row ${item.online ? "" : "offline"}" data-network-candidate="${html(item.id)}" ${item.supported && item.online ? "" : "disabled"}><span class="vendor-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || item.protocol)}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span class="support-state ${item.online && item.supported ? "supported" : "limited"}">${html(support)}</span><em>${item.supported ? "Tanımla" : "Salt okunur"}</em></button>`;
+  const confidence = Number(item.identity_confidence || 0);
+  const support = !item.online ? "Önceki taramada görüldü" : confidence >= 85 ? "Kimliği güçlü" : confidence >= 70 ? "Cihaz ailesi bulundu" : item.manufacturer ? "Üretici bulundu" : "Kimlik doğrulaması gerekli";
+  const mark = item.vendor === "Unknown" ? "?" : (item.vendor || "?").slice(0,2).toUpperCase();
+  const evidence = (item.evidence || [item.protocol]).slice(0,2).join(" · ");
+  const search = `${item.name || ""} ${item.vendor || ""} ${item.manufacturer || ""} ${item.model || ""} ${item.host || ""} ${item.mac || ""}`.toLocaleLowerCase("tr");
+  return `<button type="button" class="network-row ${item.online ? "" : "offline"}" data-network-candidate="${html(item.id)}" data-iot-row data-iot-search="${html(search)}" data-iot-category="${html(item.category || "unknown")}" data-iot-confidence="${confidence}"><span class="vendor-mark">${html(mark)}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor === "Unknown" ? (item.manufacturer || "Üretici bilinmiyor") : item.vendor)}${item.model ? ` · ${html(item.model)}` : ""}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span><small>${html(evidence)}</small><span class="support-state ${confidence >= 70 ? "supported" : "limited"}">${html(support)} · ${confidence}/100</span></span><em>${confidence >= 70 ? "İncele ve tanımla" : "Kimliği doğrula"}</em></button>`;
 }
 
 function networkDeviceRow(item) {
   const roles = { environment_sensor: "Ortam sensörü", co2_sensor: "CO₂ sensörü", light_dimmer: "Işık dimmeri", light_power: "Işık gücü", outlet_bank: "Priz grubu", humidifier: "Nemlendirici", unassigned: "Rol atanmadı" };
   const connections = { credentials_required: "Giriş bilgisi gerekli", adapter_pending: "Bağlantı sürücüsü hazırlanıyor", connected: "Bağlı" };
-  return `<button type="button" class="network-row enrolled ${item.online ? "" : "offline"}" data-network-device="${html(item.id)}"><span class="vendor-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(roles[item.role] || item.role || "Rol atanmadı")}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span class="support-state ${item.connection_status === "connected" ? "supported" : "limited"}">${html(item.online ? (connections[item.connection_status] || "Bağlantı bekliyor") : "Son taramada görülmedi")}</span><em>Yönet</em></button>`;
+  const search = `${item.name || ""} ${item.vendor || ""} ${item.model || ""} ${item.host || ""} ${item.mac || ""}`.toLocaleLowerCase("tr");
+  return `<button type="button" class="network-row enrolled ${item.online ? "" : "offline"}" data-network-device="${html(item.id)}" data-iot-row data-iot-search="${html(search)}" data-iot-category="${html(item.category || "grow_iot")}" data-iot-confidence="${html(item.identity_confidence || 100)}"><span class="vendor-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><span><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(roles[item.role] || item.role || "Rol atanmadı")}</small></span><span><b>${html(item.host)}</b><small>${html(item.mac || "MAC bilinmiyor")}</small></span><span class="support-state ${item.connection_status === "connected" ? "supported" : "limited"}">${html(item.online ? (connections[item.connection_status] || "Bağlantı sürücüsü bekliyor") : "Şu anda çevrimdışı")}</span><em>Yönet</em></button>`;
 }
 
 async function scanI2C(event) {
@@ -625,10 +661,11 @@ async function scanNetwork(event) {
   button.disabled = true;
   button.textContent = "Ağ taranıyor…";
   try {
-    const payload = await api("/api/v1/network/discover", { method: "POST", body: JSON.stringify({ timeout: 3 }) });
-    await loadState(); currentSetupView = "hardware";
-    const count = Number(payload.result?.last_scan?.candidate_count || 0);
-    showToast(`${count} ağ cihazı adayı bulundu.`);
+    const payload = await api("/api/v1/network/discover", { method: "POST", body: JSON.stringify({ timeout: 6 }) });
+    await loadState(); currentSetupView = "iot";
+    const observed = Number(payload.result?.last_scan?.observed_host_count || 0);
+    const recognized = Number(payload.result?.last_scan?.recognized_count || 0);
+    showToast(`${observed} cihaz görüldü; ${recognized} cihazın kimliği bulundu.`);
   } catch (error) {
     button.disabled = false; button.textContent = "Ağı tara"; showToast(error.message, true);
   }
@@ -637,20 +674,27 @@ async function scanNetwork(event) {
 function openNetworkDeviceDialog(item) {
   if (!item) return;
   const edit = item.status === "enrolled";
+  const manualIdentity = !item.supported || Number(item.identity_confidence || 0) < 70;
   const roles = [["unassigned","Şimdilik rol verme"],["environment_sensor","Ortam sıcaklık / nem sensörü"],["co2_sensor","CO₂ sensörü"],["light_dimmer","Işık dimmeri"],["light_power","Işık aç / kapat"],["outlet_bank","Priz grubu"],["humidifier","Nemlendirici"]];
+  const vendors = ["Shelly","Tuya","TP-Link / Tapo","Dreo","Matter","Diğer"];
+  const selectedVendor = vendors.includes(item.vendor) ? item.vendor : "Diğer";
+  const evidence = (item.evidence || []).map((value) => `<li>${html(value)}</li>`).join("");
   openDialog({
     kicker: "Ağ cihazı", title: edit ? "Cihazı düzenle" : "Cihazı tanımla", submitLabel: edit ? "Kaydet" : "Cihaz listesine ekle",
-    body: `<div class="device-fingerprint"><span class="vendor-mark large-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><div><b>${html(item.name || item.model || item.host)}</b><small>${html(item.vendor)} · ${html(item.model || "Model bilinmiyor")} · ${html(item.host)}</small></div></div><div class="dialog-grid"><label class="full"><span>Cihaz adı</span><input name="name" value="${html(item.name || item.model || item.host)}" required></label><label class="full"><span>Ne için kullanılacak?</span><select name="role">${roles.map(([role,label]) => `<option value="${role}" ${(item.role || item.suggested_role || "unassigned") === role ? "selected" : ""}>${label}</option>`).join("")}</select></label></div><details class="advanced-settings dialog-advanced"><summary>Cihaz bilgileri</summary><dl class="fingerprint-grid"><div><dt>Protokol</dt><dd>${html(item.protocol)}</dd></div><div><dt>MAC</dt><dd>${html(item.mac || "Bilinmiyor")}</dd></div><div><dt>Keşif sonucu</dt><dd>${html(item.supported ? "Cihaz ailesi tanındı" : "Yalnızca ağ adresi bulundu")}</dd></div><div><dt>Bağlantı</dt><dd>${html(item.requires_auth ? "Kullanıcı bilgisi gerekli" : "Sürücü bağlantısı bekliyor")}</dd></div></dl></details>${edit ? '<button class="danger-button dialog-remove" type="button" data-remove-network>Bu tanımı kaldır</button>' : ""}`,
+    body: `<div class="device-fingerprint"><span class="vendor-mark large-mark">${html((item.vendor || "?").slice(0,2).toUpperCase())}</span><div><b>${html(item.name || item.model || item.host)}</b><small>${html(item.host)} · ${html(item.mac || "MAC bilinmiyor")} · kimlik güveni ${html(item.identity_confidence || 0)}/100</small></div></div>${manualIdentity ? '<p class="identity-warning">Bu cihaz ağda bulundu fakat ürün kimliği kesin değil. Üzerindeki marka ve modeli bir kez doğruladığınızda sonraki taramalarda hatırlanır.</p>' : ""}<div class="dialog-grid"><label class="full"><span>Cihaz adı</span><input name="name" value="${html(item.name || item.model || item.host)}" required></label><label><span>Üretici</span><select name="vendor">${vendors.map((vendor) => `<option value="${html(vendor)}" ${selectedVendor === vendor ? "selected" : ""}>${html(vendor)}</option>`).join("")}</select></label><label><span>Model</span><input name="model" value="${html(item.model || "")}" placeholder="Cihaz üzerindeki model"></label><label class="full"><span>Ne için kullanılacak?</span><select name="role">${roles.map(([role,label]) => `<option value="${role}" ${(item.role || item.suggested_role || "unassigned") === role ? "selected" : ""}>${label}</option>`).join("")}</select></label>${manualIdentity ? '<label class="identity-confirm full"><input name="confirm_identity" type="checkbox" required><span>Üretici ve cihazı kontrol ederek doğruladım</span></label>' : ""}</div><details class="advanced-settings dialog-advanced"><summary>Nasıl bulundu?</summary>${evidence ? `<ul class="evidence-list">${evidence}</ul>` : ""}<dl class="fingerprint-grid"><div><dt>Protokol</dt><dd>${html(item.protocol)}</dd></div><div><dt>MAC üreticisi</dt><dd>${html(item.manufacturer || "Bilinmiyor")}</dd></div><div><dt>Keşif yöntemleri</dt><dd>${html((item.discovery_methods || []).join(", ") || "Ağ komşusu")}</dd></div><div><dt>Bağlantı</dt><dd>Kimlik onayından sonra uygun sürücü kurulacak</dd></div></dl></details>${edit ? '<button class="danger-button dialog-remove" type="button" data-remove-network>Bu tanımı kaldır</button>' : ""}`,
     onSubmit: async (data) => {
-      await api("/api/v1/network/enroll", { method: "POST", body: JSON.stringify({ candidate_id: item.id, name: data.get("name"), role: data.get("role") }) });
-      dialog.close(); await loadState(); currentSetupView = "hardware"; showToast(edit ? "Ağ cihazı tanımı güncellendi." : "Ağ cihazı tanımlı cihazlara eklendi.");
+      const vendor = data.get("vendor");
+      const model = data.get("model");
+      const identityChanged = vendor !== selectedVendor || model !== (item.model || "");
+      await api("/api/v1/network/enroll", { method: "POST", body: JSON.stringify({ candidate_id: item.id, name: data.get("name"), vendor, model, role: data.get("role"), confirm_identity: Boolean(data.get("confirm_identity")) || identityChanged }) });
+      dialog.close(); await loadState(); currentSetupView = "iot"; showToast(edit ? "IoT cihazı güncellendi." : "Cihaz kimliği kaydedildi.");
     },
   });
   dialogBody.querySelector("[data-remove-network]")?.addEventListener("click", async () => {
     if (!confirm(`${item.name || item.host} cihaz tanımı kaldırılsın mı?`)) return;
     try {
       await api("/api/v1/network/remove", { method: "POST", body: JSON.stringify({ candidate_id: item.id }) });
-      dialog.close(); await loadState(); currentSetupView = "hardware"; showToast("Ağ cihazı tanımı kaldırıldı.");
+      dialog.close(); await loadState(); currentSetupView = "iot"; showToast("IoT cihazı tanımı kaldırıldı; keşif kaydı korundu.");
     } catch (error) { showToast(error.message, true); }
   });
 }
