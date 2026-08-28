@@ -14,9 +14,16 @@
   cultivation work, reusable Library records, and physical System setup.
   Preserve stable `#setup/...` routes, with a compact module switcher only on
   mobile where the full sidebar is unavailable.
-- Restore Plant Library, editable stage profiles, nutrient catalog, native I²C
-  hardware, and dosing/calibration as first-class routed workspaces in the
-  standalone panel; all remain configuration-only while control is disabled.
+- Remove the misleading generic Profiles workspace and generic stage-to-product
+  assignments. Nutrient products now belong to one plant and one stage inside
+  Plant Library, so unrelated species never inherit the same product list.
+- Reduce the visible grow-start and setup fields to the decisions needed now;
+  keep product selection, physical measurements, device connection values,
+  pump calibration, and safety limits in clearly labelled optional sections.
+- Let Area & Light select an explicitly enrolled light switch or dimmer instead
+  of treating free-text fixture details as the device connection.
+- Replace development-facing UI copy about the runtime, database, and migration
+  status with short product language; keep those diagnostics in service checks.
 - Add bounded, read-only LAN discovery for Shelly mDNS/RPC, TP-Link/Tapo UDP,
   Tuya candidates, and SSDP; require an explicit name and grow-system role
   before moving any candidate into the persistent device registry.
@@ -28,8 +35,8 @@
   journal events.
 - Snapshot the selected Plant Library profile, Cannabis genetics, method,
   growing medium, fixture context, and nutrient-program name at grow start.
-- Let grow start select real catalog nutrient products, suggest the active
-  stage profile's products, and snapshot their complete identities into the
+- Let grow start select real catalog nutrient products, suggest only the
+  selected plant stage's products, and snapshot their complete identities into the
   immutable cultivation record.
 - Validate the complete browser flow on desktop and mobile while keeping all
   automatic equipment control disabled.

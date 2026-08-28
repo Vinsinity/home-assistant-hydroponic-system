@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 
-SYSTEM_PROFILE_SCHEMA_VERSION = 2
+SYSTEM_PROFILE_SCHEMA_VERSION = 3
 
 DEFAULT_SYSTEM_PROFILE: dict[str, Any] = {
     "schema_version": SYSTEM_PROFILE_SCHEMA_VERSION,
@@ -33,6 +33,7 @@ DEFAULT_SYSTEM_PROFILE: dict[str, Any] = {
         "notes": "",
     },
     "lighting": {
+        "device_id": "",
         "brand": "",
         "model": "",
         "fixture_count": 1,
@@ -117,6 +118,7 @@ def normalize_system_profile(value: Any) -> dict[str, Any]:
     schedule_off = _text(lighting.get("schedule_off") or "00:00", 5)
     result["lighting"].update(
         {
+            "device_id": _text(lighting.get("device_id"), 128),
             "brand": _text(lighting.get("brand"), 96),
             "model": _text(lighting.get("model"), 120),
             "fixture_count": _integer(

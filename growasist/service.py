@@ -395,6 +395,13 @@ class GrowAsistService:
         """Persist the reusable grow-area, medium, and fixture context."""
         with self._mutation_lock:
             state = self.store.load_state()
+            lighting = payload.get("lighting") if isinstance(payload, dict) else None
+            device_id = str(lighting.get("device_id") or "") if isinstance(lighting, dict) else ""
+            devices = state.get("device_registry", {}).get("devices", {})
+            if device_id:
+                device = devices.get(device_id) if isinstance(devices, dict) else None
+                if not isinstance(device, dict) or device.get("role") not in {"light_dimmer", "light_power"}:
+                    raise ValueError("Seçilen cihaz ışık kontrolü olarak tanımlı değil")
             state["system_profile"] = normalize_system_profile(payload)
             saved = self.store.save_state(state)
             return deepcopy(saved["system_profile"])
@@ -415,24 +422,7 @@ class GrowAsistService:
                     current[key] = _bounded_number(
                         values[key], DEFAULT_PROFILES[stage][key], low, high, integer
                     )
-            fluids = state.get("hardware", {}).get("dosing_fluids", [])
-            allowed_fluids = {
-                str(item.get("id"))
-                for item in fluids
-                if isinstance(item, dict)
-                and item.get("id")
-                and item.get("id") not in {"ph_up", "ph_down"}
-            }
-            if "nutrient_ids" in values:
-                requested = values.get("nutrient_ids")
-                if not isinstance(requested, list):
-                    raise ValueError("Besin eşlemesi bir liste olmalı")
-                current["nutrient_ids"] = list(
-                    dict.fromkeys(
-                        item for item in requested
-                        if isinstance(item, str) and item in allowed_fluids
-                    )
-                )
+            current.pop("nutrient_ids", None)
             current["name"] = DEFAULT_PROFILES[stage]["name"]
             state.setdefault("profiles", {})[stage] = current
             saved = self.store.save_state(state)
@@ -450,6 +440,29 @@ class GrowAsistService:
             values = payload.get("values")
             if not isinstance(values, dict):
                 raise ValueError("Bitki kaydı bir nesne olmalı")
+            allowed_nutrients = {
+                str(item.get("id"))
+                for item in state.get("hardware", {}).get("dosing_fluids", [])
+                if isinstance(item, dict)
+                and item.get("id")
+                and not item.get("required")
+                and item.get("category") not in {"ph", "ph_up", "ph_down"}
+            }
+            profile = values.get("profile")
+            stages = profile.get("stages") if isinstance(profile, dict) else None
+            if isinstance(stages, dict):
+                for target in stages.values():
+                    if not isinstance(target, dict) or "nutrient_ids" not in target:
+                        continue
+                    requested = target.get("nutrient_ids")
+                    if not isinstance(requested, list):
+                        raise ValueError("Aşama besinleri liste olarak gönderilmelidir")
+                    unknown = [
+                        item for item in requested
+                        if not isinstance(item, str) or item not in allowed_nutrients
+                    ]
+                    if unknown:
+                        raise ValueError("Bitki aşamasında katalog dışı besin seçilemez")
             fallback = records.get(plant_id)
             if fallback is None:
                 name = _text(values.get("name"), 96)

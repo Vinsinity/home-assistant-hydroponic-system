@@ -14,10 +14,10 @@
       <aside class="rail">
         <a class="brand" href="#today" aria-label="GrowAsist ana sayfa">
           <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span><b>GrowAsist</b><small>Yerel yetiştirme sistemi</small></span>
+          <span><b>GrowAsist</b><small>Yetiştirme günlüğü</small></span>
         </a>
         <nav aria-label="Ana bölümler">
-          <span class="rail-label primary-label">YETİŞTİRME</span>
+          <span class="rail-label primary-label">Yetiştirme</span>
           <button class="nav-item active" data-view="today">
             <span class="nav-icon">⌂</span><span>Genel Bakış</span>
           </button>
@@ -29,17 +29,15 @@
           </button>
         </nav>
         <nav class="rail-tools" aria-label="Kütüphane ve sistem bölümleri">
-          <span class="rail-label">KÜTÜPHANE</span>
+          <span class="rail-label">Kütüphane</span>
           <button type="button" data-setup-shortcut="plants"><span>B</span><b>Bitki kütüphanesi</b><small data-rail-count="plants"></small></button>
-          <button type="button" data-setup-shortcut="profiles"><span>P</span><b>Profiller</b><small>6 aşama</small></button>
           <button type="button" data-setup-shortcut="nutrients"><span>N</span><b>Besinler</b><small data-rail-count="nutrients"></small></button>
-          <span class="rail-label section-label">SİSTEM</span>
+          <span class="rail-label section-label">Sistem</span>
           <button type="button" data-setup-shortcut="overview"><span>A</span><b>Alan ve ışık</b><small>Yöntem ve medya</small></button>
           <button type="button" data-setup-shortcut="hardware"><span>H</span><b>Donanım</b><small data-rail-count="hardware"></small></button>
           <button type="button" data-setup-shortcut="dosing"><span>mL</span><b>Dozaj</b><small>Pompa eşlemesi</small></button>
         </nav>
         <div class="rail-foot">
-          <span class="local-seal"><i></i> Raspberry Pi üzerinde</span>
           <button class="text-button" data-lock>Oturumu kilitle</button>
         </div>
       </aside>
@@ -47,12 +45,12 @@
       <main>
         <header class="topbar">
           <div>
-            <span class="kicker" data-view-kicker>YETİŞTİRME MERKEZİ</span>
-            <h1 data-view-title>Bugün</h1>
+            <span class="page-context" data-view-kicker>Yetiştirme</span>
+            <h1 data-view-title>Genel Bakış</h1>
           </div>
           <div class="system-state">
             <span class="status-dot"></span>
-            <span><b>Yerel sistem çevrimiçi</b><small>Home Assistant kullanılmıyor</small></span>
+            <span><b>Hazır</b></span>
           </div>
         </header>
         <section class="view" data-view-content aria-live="polite"></section>
@@ -63,9 +61,8 @@
       <div class="auth-waterline" aria-hidden="true"><i></i></div>
       <div class="auth-panel">
         <span class="brand-mark large" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span class="kicker">RASPBERRY PI · YEREL ERİŞİM</span>
-        <h1>Yetiştirme alanına gir</h1>
-        <p>Kurulum sırasında oluşturduğunuz erişim anahtarını girin. Anahtar bu tarayıcı sekmesi kapandığında silinir.</p>
+        <h1>GrowAsist'e giriş</h1>
+        <p>Erişim anahtarınızı girin.</p>
         <form data-auth-form>
           <label><span>Erişim anahtarı</span><input name="token" type="password" autocomplete="current-password" required></label>
           <button class="primary-button" type="submit">Sisteme bağlan</button>

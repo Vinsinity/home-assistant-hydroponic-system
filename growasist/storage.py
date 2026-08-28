@@ -243,6 +243,14 @@ class GrowAsistStore:
         result["plant_catalog"] = normalize_plant_catalog(
             value.get("plant_catalog")
         )
+        # Legacy generic stage profiles used to carry product ids.  Product
+        # selection is plant-specific now; keep the old revision recoverable
+        # but never let unrelated plants inherit those assignments.
+        profiles = result.get("profiles")
+        if isinstance(profiles, dict):
+            for profile in profiles.values():
+                if isinstance(profile, dict):
+                    profile.pop("nutrient_ids", None)
         active = active_cultivation(result)
         transitions = active.get("transitions", []) if active else []
         result["active_stage"] = (

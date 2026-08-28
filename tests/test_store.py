@@ -158,7 +158,7 @@ def test_store_migrates_and_persists_product_profiles_without_losing_journal():
     asyncio.run(store.async_load())
 
     assert store.data["system_profile"]["cabin"]["name"] == "My cabinet"
-    assert store.data["system_profile"]["schema_version"] == 2
+    assert store.data["system_profile"]["schema_version"] == 3
     assert store.data["system_profile"]["system"]["growing_medium"] == ""
     assert store.data["assistant_settings"]["provider_entity_id"] == "ai_task.local"
     assert store.data["assistant_settings"]["read_only"] is True

@@ -28,6 +28,7 @@ def test_system_profile_is_complete_bounded_and_copy_safe():
                 "plant_capacity": 4,
             },
             "lighting": {
+                "device_id": "shelly-light",
                 "brand": "Lumatek",
                 "model": "ZEUS",
                 "power_w_each": 600,
@@ -38,9 +39,10 @@ def test_system_profile_is_complete_bounded_and_copy_safe():
     )
 
     assert profile["cabin"]["width_cm"] == 120
-    assert profile["schema_version"] == 2
+    assert profile["schema_version"] == 3
     assert profile["system"]["growing_medium"] == "Expanded clay"
     assert profile["lighting"]["dimmer_percent"] == 100
+    assert profile["lighting"]["device_id"] == "shelly-light"
     assert profile["lighting"]["schedule_on"] == "06:00"
     assert grow_profile.system_profile_completeness(profile)["complete"] is True
 

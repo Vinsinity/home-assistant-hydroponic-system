@@ -18,8 +18,9 @@ The repository now includes a usable Home Assistant-independent product slice:
   maintenance, calibration, stage changes, and notes without exposing update or
   delete operations;
 - the sidebar separates daily cultivation work from reusable **Library** records
-  and physical **System** setup. Plant Library, stage profiles, nutrients, area
-  and light, native I²C/network hardware, and dosing each keep a stable route;
+  and physical **System** setup. Plant-specific stage targets and product choices
+  live together in Plant Library; nutrients, area and light, hardware, and dosing
+  each keep a stable route;
 - nutrient-product identity, physical hardware, and pump/fluid mapping remain
   separate records, and saving any of them never enables equipment control;
 - SQLite WAL storage keeps immutable journal events and full state revisions;

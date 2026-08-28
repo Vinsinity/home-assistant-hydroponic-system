@@ -16,7 +16,7 @@ from typing import Any
 import unicodedata
 
 
-PLANT_CATALOG_SCHEMA_VERSION = 3
+PLANT_CATALOG_SCHEMA_VERSION = 4
 STAGE_ORDER = ("germination", "early_veg", "veg", "bloom", "darkness", "harvest")
 PROFILE_KIND = "editable_example"
 
@@ -202,6 +202,9 @@ def _stage(
         "ec_max": ec_max,
         "water_temperature": water_temperature,
         "do_minimum": do_minimum,
+        # Product selection belongs to this plant and this stage.  It is never
+        # inherited from a generic stage profile shared by unrelated plants.
+        "nutrient_ids": [],
     }
 
 
@@ -378,6 +381,14 @@ def _normalize_stage(value: Any, fallback: dict[str, Any]) -> dict[str, Any]:
         low = _number(value.get(f"{prefix}_min"), fallback[f"{prefix}_min"], 0, maximum)
         high = _number(value.get(f"{prefix}_max"), fallback[f"{prefix}_max"], 0, maximum)
         result[f"{prefix}_min"], result[f"{prefix}_max"] = sorted((low, high))
+    raw_nutrients = value.get("nutrient_ids", fallback.get("nutrient_ids", []))
+    result["nutrient_ids"] = list(
+        dict.fromkeys(
+            nutrient_id
+            for nutrient_id in raw_nutrients
+            if isinstance(nutrient_id, str) and _ID_PATTERN.fullmatch(nutrient_id)
+        )
+    )[:64] if isinstance(raw_nutrients, list) else []
     return result
 
 
