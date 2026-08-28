@@ -18,6 +18,12 @@ from custom_components.hydroponic_system.const import (
     STAGE_ORDER,
 )
 from custom_components.hydroponic_system.grow_profile import normalize_system_profile
+from custom_components.hydroponic_system.grow_profile_catalog import (
+    GROW_PROFILE_SCHEMA_VERSION,
+    grow_profile_plan,
+    grow_profile_snapshot,
+    normalize_grow_profile_record,
+)
 from custom_components.hydroponic_system.journal import (
     active_cultivation,
     append_event,
@@ -37,7 +43,6 @@ from custom_components.hydroponic_system.plant_catalog import (
     cultivation_plant_snapshot,
     make_custom_plant_record,
     normalize_plant_record,
-    plant_plan,
 )
 
 from . import __version__
@@ -171,6 +176,7 @@ class GrowAsistService:
             "events": deepcopy(state.get("events", [])),
             "profiles": deepcopy(state.get("profiles", {})),
             "plant_catalog": deepcopy(state.get("plant_catalog", {})),
+            "grow_profiles": deepcopy(state.get("grow_profiles", {})),
             "nutrient_catalog": deepcopy(state.get("nutrient_catalog", {})),
             "system_profile": deepcopy(state.get("system_profile", {})),
             "hardware": deepcopy(state.get("hardware", {})),
@@ -187,11 +193,13 @@ class GrowAsistService:
     ) -> dict[str, Any]:
         catalog = state.setdefault("plant_catalog", {})
         records = catalog.setdefault("records", {})
-        profile_id = str(payload.get("plant_profile_id") or "").strip().lower()
-        if profile_id:
-            selected = records.get(profile_id)
+        plant_id = str(
+            payload.get("plant_id") or payload.get("plant_profile_id") or ""
+        ).strip().lower()
+        if plant_id:
+            selected = records.get(plant_id)
             if selected is None:
-                raise ValueError("Seçilen bitki profili bulunamadı")
+                raise ValueError("Seçilen bitki bulunamadı")
             return selected
 
         species = str(payload.get("plant_species") or "").strip()
@@ -220,6 +228,36 @@ class GrowAsistService:
         records[custom_id] = selected
         catalog.setdefault("order", []).append(custom_id)
         return selected
+
+    @staticmethod
+    def _selected_grow_profile(
+        state: dict[str, Any], payload: dict[str, Any], selected_plant: dict[str, Any]
+    ) -> dict[str, Any]:
+        catalog = state.get("grow_profiles", {})
+        records = catalog.get("records", {}) if isinstance(catalog, dict) else {}
+        profile_id = str(payload.get("grow_profile_id") or "").strip().lower()
+        if profile_id:
+            profile = records.get(profile_id)
+            if not isinstance(profile, dict):
+                raise ValueError("Seçilen yetiştirme profili bulunamadı")
+            return profile
+
+        # Compatibility for older clients: use a same-origin starter when one
+        # exists, otherwise create a transient snapshot from the selected plant.
+        legacy_id = f"{selected_plant.get('id', '')}_starter"
+        legacy = records.get(legacy_id)
+        if isinstance(legacy, dict):
+            return legacy
+        transient_id = f"legacy_{selected_plant.get('id', 'plant')}"[:64]
+        return normalize_grow_profile_record(
+            {
+                "id": transient_id,
+                "name": f"{selected_plant.get('name') or 'Bitki'} · Geçici profil",
+                "description": "Eski istemci için yetiştirme başlangıcında oluşturuldu.",
+                "stages": selected_plant.get("profile", {}).get("stages", {}),
+            },
+            profile_id=transient_id,
+        )
 
     @staticmethod
     def _genetics(
@@ -296,6 +334,9 @@ class GrowAsistService:
             )
 
             selected_plant = self._selected_plant(state, payload)
+            selected_grow_profile = self._selected_grow_profile(
+                state, payload, selected_plant
+            )
             genetics_identity, genetics_snapshot = self._genetics(
                 state, selected_plant, payload
             )
@@ -409,6 +450,9 @@ class GrowAsistService:
                     }
             identity = {
                 "plant_profile_id": selected_plant["id"],
+                "plant_id": selected_plant["id"],
+                "grow_profile_id": selected_grow_profile["id"],
+                "grow_profile_name": selected_grow_profile["name"],
                 "plant_species": selected_plant["name"],
                 "botanical_name": selected_plant.get("botanical_name", ""),
                 "plant_count": payload.get("plant_count", 1),
@@ -427,20 +471,23 @@ class GrowAsistService:
                 "notes": str(payload.get("notes") or "")[:4000],
                 **genetics_identity,
             }
-            plan = plant_plan(selected_plant)
+            plan = grow_profile_plan(selected_grow_profile)
+            plant_snapshot = cultivation_plant_snapshot(
+                selected_plant,
+                genetics_snapshot.get("cultivar"),
+                catalog_version=str(
+                    state.get("plant_catalog", {}).get("catalog_version") or ""
+                ),
+            )
+            plant_snapshot.pop("profile", None)
             cultivation = new_cultivation(
                 name=str(payload.get("name") or "")[:80],
                 start_date=start_date,
                 identity=identity,
                 plan=plan,
                 system_snapshot=system,
-                plant_profile_snapshot=cultivation_plant_snapshot(
-                    selected_plant,
-                    genetics_snapshot.get("cultivar"),
-                    catalog_version=str(
-                        state.get("plant_catalog", {}).get("catalog_version") or ""
-                    ),
-                ),
+                plant_profile_snapshot=plant_snapshot,
+                grow_profile_snapshot=grow_profile_snapshot(selected_grow_profile),
                 genetics_snapshot=genetics_snapshot,
                 nutrient_program_snapshot={
                     "name": nutrient_program,
@@ -576,8 +623,63 @@ class GrowAsistService:
             saved = self.store.save_state(state)
             return deepcopy(saved["profiles"][stage])
 
+    def update_grow_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Create or update one independent, user-owned grow profile."""
+        with self._mutation_lock:
+            state = self.store.load_state()
+            catalog = state.setdefault(
+                "grow_profiles",
+                {
+                    "schema_version": GROW_PROFILE_SCHEMA_VERSION,
+                    "order": [],
+                    "records": {},
+                },
+            )
+            records = catalog.setdefault("records", {})
+            profile_id = str(payload.get("profile_id") or "").strip().lower()
+            if not _ID_PATTERN.fullmatch(profile_id):
+                raise ValueError("Profil kimliği küçük harf, rakam, _ veya - kullanmalı")
+            values = payload.get("values")
+            if not isinstance(values, dict):
+                raise ValueError("Profil kaydı bir nesne olmalı")
+            fallback = records.get(profile_id)
+            normalized = normalize_grow_profile_record(
+                values, profile_id=profile_id, fallback=fallback
+            )
+            if not normalized["name"]:
+                raise ValueError("Profil adı gerekli")
+            grow_profile_plan(normalized)
+            records[profile_id] = normalized
+            order = catalog.setdefault("order", [])
+            if profile_id not in order:
+                order.append(profile_id)
+            saved = self.store.save_state(state)
+            return deepcopy(saved["grow_profiles"]["records"][profile_id])
+
+    def remove_grow_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Remove one reusable profile without touching cultivation snapshots."""
+        with self._mutation_lock:
+            state = self.store.load_state()
+            catalog = state.setdefault(
+                "grow_profiles",
+                {
+                    "schema_version": GROW_PROFILE_SCHEMA_VERSION,
+                    "order": [],
+                    "records": {},
+                },
+            )
+            profile_id = str(payload.get("profile_id") or "").strip().lower()
+            record = catalog.setdefault("records", {}).pop(profile_id, None)
+            if not isinstance(record, dict):
+                raise ValueError("Silinecek profil bulunamadı")
+            catalog["order"] = [
+                item for item in catalog.setdefault("order", []) if item != profile_id
+            ]
+            self.store.save_state(state)
+            return {"id": profile_id, "name": str(record.get("name") or "")}
+
     def update_plant(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Create or update one plant library record and its example targets."""
+        """Create or update one plant identity and genetics library record."""
         with self._mutation_lock:
             state = self.store.load_state()
             catalog = state.setdefault("plant_catalog", {})

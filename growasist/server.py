@@ -153,6 +153,8 @@ def build_handler(
                     "/api/v1/journal/events": application.append_journal_event,
                     "/api/v1/system-profile": application.update_system_profile,
                     "/api/v1/profiles": application.update_profile,
+                    "/api/v1/grow-profiles": application.update_grow_profile,
+                    "/api/v1/grow-profiles/remove": application.remove_grow_profile,
                     "/api/v1/plants": application.update_plant,
                     "/api/v1/nutrients/catalog/add": application.add_catalog_nutrient,
                     "/api/v1/nutrient-programs/add": application.add_nutrient_program,

@@ -47,7 +47,12 @@ def _record(record_id: str, start_date: str):
         },
         plant_profile_snapshot={
             "id": "tomato",
-            "profile": {"kind": "editable_example"},
+            "name": "Tomato",
+        },
+        grow_profile_snapshot={
+            "id": "summer_rdwc",
+            "name": "Summer RDWC",
+            "stages": {"germination": {"planned_days": 6}},
         },
         genetics_snapshot={
             "growth_type": {"id": "photoperiod", "name": "Photoperiod"},
@@ -104,6 +109,8 @@ def test_cultivation_keeps_its_system_snapshot_in_record_and_start_event():
     assert started["data"]["system_snapshot"] == record["system_snapshot"]
     assert record["plant_profile_snapshot"]["id"] == "tomato"
     assert started["data"]["plant_profile_snapshot"] == record["plant_profile_snapshot"]
+    assert record["grow_profile_snapshot"]["id"] == "summer_rdwc"
+    assert started["data"]["grow_profile_snapshot"] == record["grow_profile_snapshot"]
     assert record["genetics_snapshot"]["breeder"]["name"] == "Example Breeder"
     assert started["data"]["genetics_snapshot"] == record["genetics_snapshot"]
     assert record["nutrient_program_snapshot"]["nutrient_ids"] == ["base_a", "base_b"]

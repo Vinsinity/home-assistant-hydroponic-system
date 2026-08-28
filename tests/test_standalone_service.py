@@ -20,7 +20,8 @@ def _start_payload(**overrides):
         "cultivation_id": "standalone_grow",
         "name": "Standalone grow",
         "start_date": date.today().isoformat(),
-        "plant_profile_id": "tomato",
+        "plant_id": "tomato",
+        "grow_profile_id": "tomato_starter",
         "plant_count": 2,
         "growing_method": "RDWC",
         "growing_medium": "Expanded clay",
@@ -76,7 +77,7 @@ def test_custom_plant_is_persisted_in_the_library(tmp_path):
     grow = service.start_cultivation(
         _start_payload(
             cultivation_id="custom_grow",
-            plant_profile_id="",
+            plant_id="",
             plant_species="Pak choi",
         )
     )
@@ -106,6 +107,60 @@ def test_later_setup_edits_cannot_rewrite_a_grow_snapshot(tmp_path):
     )
 
 
+def test_grow_profiles_are_independent_crud_records_and_deleted_profiles_stay_deleted(tmp_path):
+    database_path = tmp_path / "growasist.db"
+    service = GrowAsistService(GrowAsistStore(database_path))
+    tomato = service.bootstrap()["grow_profiles"]["records"]["tomato_starter"]
+    values = json.loads(json.dumps(tomato))
+    values.update({"name": "Benim RDWC profilim", "description": "Bitkiden bağımsız"})
+    values["stages"]["veg"]["planned_days"] = 41
+
+    created = service.update_grow_profile(
+        {"profile_id": "my_rdwc", "values": values}
+    )
+    assert created["id"] == "my_rdwc"
+    assert created["stages"]["veg"]["planned_days"] == 41
+    assert "plant_id" not in created
+    assert all("nutrient_ids" not in stage for stage in created["stages"].values())
+
+    removed = service.remove_grow_profile({"profile_id": "tomato_starter"})
+    assert removed["id"] == "tomato_starter"
+
+    restarted_service = GrowAsistService(GrowAsistStore(database_path))
+    restarted = restarted_service.bootstrap()["grow_profiles"]
+    assert "my_rdwc" in restarted["records"]
+    assert "tomato_starter" not in restarted["records"]
+
+
+def test_grow_start_selects_plant_and_profile_separately_and_freezes_both(tmp_path):
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    created = service.start_cultivation(
+        _start_payload(
+            cultivation_id="independent_profile_grow",
+            plant_id="tomato",
+            grow_profile_id="lettuce_starter",
+        )
+    )
+
+    assert created["identity"]["plant_id"] == "tomato"
+    assert created["identity"]["grow_profile_id"] == "lettuce_starter"
+    assert created["plant_profile_snapshot"]["id"] == "tomato"
+    assert "profile" not in created["plant_profile_snapshot"]
+    assert created["grow_profile_snapshot"]["id"] == "lettuce_starter"
+    frozen_days = created["grow_profile_snapshot"]["stages"]["veg"]["planned_days"]
+
+    profile = service.bootstrap()["grow_profiles"]["records"]["lettuce_starter"]
+    profile["stages"]["veg"]["planned_days"] = frozen_days + 10
+    service.update_grow_profile(
+        {"profile_id": "lettuce_starter", "values": profile}
+    )
+    service.remove_grow_profile({"profile_id": "lettuce_starter"})
+
+    active = service.bootstrap()["active_cultivation"]
+    assert active["grow_profile_snapshot"]["stages"]["veg"]["planned_days"] == frozen_days
+    assert active["identity"]["grow_profile_id"] == "lettuce_starter"
+
+
 def test_light_setup_accepts_only_an_enrolled_light_device(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
     state = service.store.load_state()
@@ -127,7 +182,7 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
 
     bootstrap = service.bootstrap()
-    assert set(("profiles", "plant_catalog", "nutrient_catalog", "hardware", "assistant_settings")) <= set(bootstrap)
+    assert set(("profiles", "plant_catalog", "grow_profiles", "nutrient_catalog", "hardware", "assistant_settings")) <= set(bootstrap)
     assert len(bootstrap["nutrient_catalog"]["products"]) >= 367
     assert bootstrap["plant_catalog"]["records"]["cannabis"]["cultivars"]
 
@@ -418,7 +473,8 @@ def test_cannabis_requires_growth_type_when_no_catalog_cultivar_is_selected(tmp_
         service.start_cultivation(
             _start_payload(
                 cultivation_id="cannabis_grow",
-                plant_profile_id="cannabis",
+                plant_id="cannabis",
+                grow_profile_id="cannabis_starter",
             )
         )
 
@@ -547,6 +603,35 @@ def test_http_api_saves_setup_modules(standalone_http):
     bootstrap = json.loads(body)
     assert bootstrap["profiles"]["veg"]["planned_days"] == 31
     assert bootstrap["hardware"]["poll_interval"] == 60
+
+
+def test_http_api_creates_and_removes_an_independent_grow_profile(standalone_http):
+    _, _, body = _request(
+        standalone_http, "GET", "/api/v1/bootstrap", token="test-secret"
+    )
+    bootstrap = json.loads(body)
+    values = bootstrap["grow_profiles"]["records"]["lettuce_starter"]
+    values["name"] = "API profili"
+
+    status, _, body = _request(
+        standalone_http,
+        "POST",
+        "/api/v1/grow-profiles",
+        token="test-secret",
+        payload={"profile_id": "api_profile", "values": values},
+    )
+    assert status == 200, body
+    assert json.loads(body)["result"]["name"] == "API profili"
+
+    status, _, body = _request(
+        standalone_http,
+        "POST",
+        "/api/v1/grow-profiles/remove",
+        token="test-secret",
+        payload={"profile_id": "api_profile"},
+    )
+    assert status == 200, body
+    assert json.loads(body)["result"]["id"] == "api_profile"
 
 
 def test_http_api_adds_an_official_nutrient_catalog_product(standalone_http):

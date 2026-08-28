@@ -158,7 +158,7 @@ function syncNavigation() {
   document.querySelectorAll("[data-setup-shortcut]").forEach((item) => item.classList.toggle("active", currentView === "setup" && item.dataset.setupShortcut === currentSetupView));
   if (!state) return;
   document.querySelector('[data-rail-count="plants"]').textContent = `${plantOptions().length} tür`;
-  document.querySelector('[data-rail-count="profiles"]').textContent = `${plantOptions().length} profil`;
+  document.querySelector('[data-rail-count="profiles"]').textContent = `${growProfileOptions().length} profil`;
   document.querySelector('[data-rail-count="nutrients"]').textContent = `${state.hardware?.dosing_fluids?.length || 0} ürün`;
   document.querySelector('[data-rail-count="hardware"]').textContent = `${state.hardware?.device_assignments?.length || 0} cihaz`;
   const iotCount = Object.values(state.device_registry?.devices || {}).length;
@@ -241,12 +241,15 @@ function renderToday() {
   const events = recentEvents();
   const snapshot = grow.system_snapshot || state.system_profile || {};
   const lighting = snapshot.lighting || {};
-  const stageTarget = grow.plant_profile_snapshot?.profile?.stages?.[state.active_stage] || {};
+  const stageTarget = grow.grow_profile_snapshot?.stages?.[state.active_stage]
+    || grow.plant_profile_snapshot?.profile?.stages?.[state.active_stage]
+    || {};
   const context = [
     ["Yöntem", identity.growing_method || "—"],
     ["Medya", identity.growing_medium || "—"],
     ["Işık hedefi", stageTarget.photoperiod != null ? `${stageTarget.photoperiod} saat · %${stageTarget.light_intensity}` : "—"],
     ["Armatür", lighting.model || lighting.brand || "Henüz tanımlanmadı"],
+    ["Yetiştirme profili", identity.grow_profile_name || grow.grow_profile_snapshot?.name || "—"],
     ["Besin seçimi", identity.nutrient_program || "Henüz seçilmedi"],
   ];
 
@@ -306,7 +309,7 @@ function renderSetup() {
   const modules = [
     ["overview", "Alan ve ışık", "Yöntem, medya ve armatür"],
     ["plants", "Bitki kütüphanesi", `${plantOptions().length} tür`],
-    ["profiles", "Profiller", `${plantOptions().length} yetiştirme profili`],
+    ["profiles", "Profiller", `${growProfileOptions().length} yetiştirme profili`],
     ["nutrients", "Besinler", `${state.hardware?.dosing_fluids?.length || 0} ürün`],
     ["hardware", "Yerel donanım", `${state.hardware?.device_assignments?.length || 0} kablolu cihaz`],
     ["iot", "IoT cihazları", `${Object.values(state.device_registry?.devices || {}).length} tanımlı`],
@@ -314,7 +317,7 @@ function renderSetup() {
   const descriptions = {
     overview: ["Sistem", "Yöntemini, yetiştirme medyanı ve ışığını tanımla."],
     plants: ["Kütüphane", "Bitki türlerini, çeşitleri ve kaynakları yönet."],
-    profiles: ["Kütüphane", "Aşama sürelerini ve çevresel hedefleri besinlerden bağımsız düzenle."],
+    profiles: ["Kütüphane", "Bağımsız profiller oluştur, kopyala, düzenle veya sil."],
     nutrients: ["Kütüphane", "Marka ürünlerini incele ve gerçekten kullandıklarını kendi listene ekle."],
     hardware: ["Sistem", "Raspberry Pi üzerine kabloyla bağlanan kartları yönet."],
     iot: ["Sistem", "Wi-Fi ve yerel ağ cihazlarını bul, doğrula ve rol ver."],
@@ -387,7 +390,7 @@ function stageTargetFields(stage, target) {
     fieldInput("water_temperature", "Su sıcaklığı · °C", 0, 40, .1),
     fieldInput("do_minimum", "Minimum DO · mg/L", 0, 30, .1),
   ].join("");
-  return `${basic}<label><span>pH alt</span><input name="stage.${stage}.ph_min" type="number" min="0" max="14" step=".1" value="${html(target.ph_min)}"></label><label><span>pH üst</span><input name="stage.${stage}.ph_max" type="number" min="0" max="14" step=".1" value="${html(target.ph_max)}"></label><label><span>EC alt</span><input name="stage.${stage}.ec_min" type="number" min="0" max="10" step=".1" value="${html(target.ec_min)}"></label><label><span>EC üst</span><input name="stage.${stage}.ec_max" type="number" min="0" max="10" step=".1" value="${html(target.ec_max)}"></label><details class="advanced-settings full"><summary>Diğer hedefler</summary><div class="field-grid compact-grid">${advanced}</div></details>`;
+  return `${basic}<label><span>pH alt</span><input name="stage.${stage}.ph_min" type="number" min="0" max="14" step=".1" value="${html(target.ph_min)}"></label><label><span>pH üst</span><input name="stage.${stage}.ph_max" type="number" min="0" max="14" step=".1" value="${html(target.ph_max)}"></label><label><span>EC alt</span><input name="stage.${stage}.ec_min" type="number" min="0" max="10" step=".01" value="${html(target.ec_min)}"></label><label><span>EC üst</span><input name="stage.${stage}.ec_max" type="number" min="0" max="10" step=".01" value="${html(target.ec_max)}"></label><details class="advanced-settings full"><summary>Diğer hedefler</summary><div class="field-grid compact-grid">${advanced}</div></details>`;
 }
 
 function renderPlants(panel) {
@@ -425,22 +428,24 @@ function renderPlants(panel) {
 }
 
 function renderProfiles(panel) {
-  const plants = plantOptions();
-  if (!selectedProfileId || !state.plant_catalog?.records?.[selectedProfileId]) selectedProfileId = plants[0]?.id || "";
-  const plant = state.plant_catalog?.records?.[selectedProfileId];
-  if (!plant) {
-    panel.innerHTML = '<p class="empty-list">Henüz yetiştirme profili yok.</p>';
+  const profiles = growProfileOptions();
+  if (!selectedProfileId || !state.grow_profiles?.records?.[selectedProfileId]) selectedProfileId = profiles[0]?.id || "";
+  const profile = state.grow_profiles?.records?.[selectedProfileId];
+  if (!profile) {
+    panel.innerHTML = `<section class="empty-profile-library"><span class="record-type">Profil kütüphanesi</span><h3>Henüz profil yok</h3><p>İlk bağımsız yetiştirme profilini oluştur. Bitki ve besin seçimini daha sonra yetiştirme başlatırken yapacaksın.</p><button class="primary-button" type="button" data-add-profile>Yeni profil oluştur</button></section>`;
+    panel.querySelector("[data-add-profile]").addEventListener("click", openAddProfileDialog);
     return;
   }
-  const stages = plant.profile?.stages || {};
+  const stages = profile.stages || {};
   panel.innerHTML = `<div class="library-layout profile-workspace">
-    <aside class="library-index"><div class="profile-library-heading"><span class="record-type">Yetiştirme profilleri</span><h3>Bitkiye göre hedefler</h3><p>Besinlerden tamamen bağımsızdır.</p></div>
-      <div>${plants.map((item) => `<button type="button" class="library-item ${item.id === plant.id ? "active" : ""}" data-profile-id="${html(item.id)}"><span><b>${html(item.name)}</b><small>${html(item.botanical_name || item.english_name)}</small></span><em>${Object.values(item.profile?.stages || {}).filter((stage) => stage.enabled).length}</em></button>`).join("")}</div>
+    <aside class="library-index"><div class="profile-library-heading"><span class="record-type">Profil kütüphanesi</span><h3>Bağımsız hedef setleri</h3><p>Her profili istediğin bitkiyle kullanabilirsin.</p><button class="secondary-button compact" type="button" data-add-profile>+ Yeni profil</button></div>
+      <div>${profiles.map((item) => `<button type="button" class="library-item ${item.id === profile.id ? "active" : ""}" data-profile-id="${html(item.id)}"><span><b>${html(item.name)}</b><small>${html(item.description || "Açıklama yok")}</small></span><em>${Object.values(item.stages || {}).filter((stage) => stage.enabled).length}</em></button>`).join("")}</div>
     </aside>
     <form class="library-detail" data-profile-form>
-      <div class="record-heading"><div><span class="record-type">Düzenlenebilir başlangıç profili</span><h3>${html(plant.name)}</h3><p>Aşama, ışık ve çevresel hedefleri belirler. Besin markası, ürünü veya doz planı saklamaz.</p></div><button class="primary-button" type="submit">Profili kaydet</button></div>
-      <section class="profile-boundary" aria-label="Profil kapsamı"><span><b>Bu profilde olanlar</b><small>Aşama süresi · ışık · sıcaklık · nem · VPD · CO₂ · pH · EC · su hedefleri</small></span><span><b>Bu profilde olmayanlar</b><small>Besin markası · ürün seti · pompa · doz miktarı</small></span></section>
-      <section class="target-ledger"><header><div><h3>Aşama hedefleri</h3><p>Bir yetiştirme başlatırken bu profil kopyalanır; besin seçimi ayrıca yapılır.</p></div></header>
+      <div class="record-heading"><div><span class="record-type">${profile.starter ? "Başlangıçtan taşınan profil" : "Kullanıcı profili"}</span><h3>${html(profile.name)}</h3><p>Bu kayıt bağımsızdır; herhangi bir bitkiye veya besine kilitli değildir.</p></div><div class="record-actions"><button class="secondary-button compact" type="button" data-duplicate-profile>Kopyala</button><button class="danger-button" type="button" data-delete-profile>Sil</button><button class="primary-button" type="submit">Kaydet</button></div></div>
+      <section class="profile-identity"><div class="field-grid simple-grid"><label><span>Profil adı</span><input name="profile.name" value="${html(profile.name)}" maxlength="96" required></label><label class="wide"><span>Açıklama</span><textarea name="profile.description" maxlength="1200">${html(profile.description)}</textarea></label></div></section>
+      <section class="profile-boundary" aria-label="Profil kapsamı"><span><b>Bu profilde olanlar</b><small>Aşama süresi · ışık · sıcaklık · nem · VPD · CO₂ · pH · EC · su hedefleri</small></span><span><b>Bu profilde olmayanlar</b><small>Bitki türü · cultivar · besin markası · ürün · pompa · doz miktarı</small></span></section>
+      <section class="target-ledger"><header><div><h3>Aşama hedefleri</h3><p>Yetiştirme başlatırken profil bağımsız seçilir ve değişmez kopyası alınır.</p></div></header>
         ${stageOrder.map((stage) => { const target = stages[stage] || {}; return `<details class="target-row"><summary><span><b>${html(state.stage_labels[stage] || stage)}</b><small>${target.enabled ? `${html(target.planned_days)} gün · ${html(target.photoperiod)} saat` : "Kullanılmıyor"}</small></span><label class="inline-check"><input name="stage.${stage}.enabled" type="checkbox" ${target.enabled ? "checked" : ""}> Kullan</label></summary><div class="field-grid compact-grid">
           ${stageTargetFields(stage, target)}
         </div></details>`; }).join("")}
@@ -448,6 +453,9 @@ function renderProfiles(panel) {
     </form>
   </div>`;
   panel.querySelectorAll("[data-profile-id]").forEach((button) => button.addEventListener("click", () => { selectedProfileId = button.dataset.profileId; renderSetup(); }));
+  panel.querySelector("[data-add-profile]").addEventListener("click", openAddProfileDialog);
+  panel.querySelector("[data-duplicate-profile]").addEventListener("click", duplicateSelectedProfile);
+  panel.querySelector("[data-delete-profile]").addEventListener("click", deleteSelectedProfile);
   panel.querySelector("[data-profile-form]").addEventListener("submit", saveProfile);
 }
 
@@ -481,16 +489,56 @@ async function savePlant(event) {
 
 async function saveProfile(event) {
   event.preventDefault();
-  const plant = JSON.parse(JSON.stringify(state.plant_catalog.records[selectedProfileId]));
+  const profile = JSON.parse(JSON.stringify(state.grow_profiles.records[selectedProfileId]));
   const data = new FormData(event.currentTarget);
-  plant.profile ||= { kind: "editable_example", stages: {} };
+  profile.name = String(data.get("profile.name") || "").trim();
+  profile.description = String(data.get("profile.description") || "").trim();
+  profile.stages ||= {};
   for (const stage of stageOrder) {
-    const target = plant.profile.stages[stage] ||= {};
+    const target = profile.stages[stage] ||= {};
     target.enabled = data.has(`stage.${stage}.enabled`);
     for (const key of ["planned_days","photoperiod","light_intensity","day_temperature","night_temperature","humidity","vpd","co2","water_temperature","do_minimum","ph_min","ph_max","ec_min","ec_max"]) target[key] = Number(data.get(`stage.${stage}.${key}`));
   }
-  await api("/api/v1/plants", { method: "POST", body: JSON.stringify({ plant_id: selectedProfileId, values: plant }) });
+  await api("/api/v1/grow-profiles", { method: "POST", body: JSON.stringify({ profile_id: selectedProfileId, values: profile }) });
   await loadState(); currentSetupView = "profiles"; showToast("Yetiştirme profili kaydedildi.");
+}
+
+function openAddProfileDialog() {
+  const profiles = growProfileOptions();
+  const templateOptions = [["", "Temel aşamalarla başla"], ...profiles.map((profile) => [profile.id, `${profile.name} kopyası`])];
+  openDialog({
+    kicker: "Profiller", title: "Yeni profil oluştur", submitLabel: "Profili oluştur",
+    body: `<div class="dialog-grid"><label class="full"><span>Profil adı</span><input name="name" maxlength="96" required placeholder="Örn. Hızlı gelişim, Yaz RDWC…"></label><label class="full"><span>Başlangıç şablonu</span><select name="template_id">${optionRows(templateOptions, "")}</select></label><label class="full"><span>Açıklama</span><textarea name="description" maxlength="1200" placeholder="Bu profilin amacını yaz"></textarea></label></div>`,
+    onSubmit: async (data) => {
+      const template = state.grow_profiles?.records?.[data.get("template_id")];
+      const values = template ? JSON.parse(JSON.stringify(template)) : {};
+      values.name = String(data.get("name") || "").trim();
+      values.description = String(data.get("description") || "").trim();
+      values.starter = false;
+      selectedProfileId = `profile_${id().slice(0, 16)}`;
+      await api("/api/v1/grow-profiles", { method: "POST", body: JSON.stringify({ profile_id: selectedProfileId, values }) });
+      dialog.close(); await loadState(); currentSetupView = "profiles"; showToast("Yeni profil oluşturuldu.");
+    },
+  });
+}
+
+async function duplicateSelectedProfile() {
+  const source = state.grow_profiles?.records?.[selectedProfileId];
+  if (!source) return;
+  const values = JSON.parse(JSON.stringify(source));
+  values.name = `${source.name} · Kopya`.slice(0, 96);
+  values.starter = false;
+  selectedProfileId = `profile_${id().slice(0, 16)}`;
+  await api("/api/v1/grow-profiles", { method: "POST", body: JSON.stringify({ profile_id: selectedProfileId, values }) });
+  await loadState(); currentSetupView = "profiles"; showToast("Profil kopyalandı.");
+}
+
+async function deleteSelectedProfile() {
+  const profile = state.grow_profiles?.records?.[selectedProfileId];
+  if (!profile || !confirm(`${profile.name} profili silinsin mi? Eski yetiştirme kayıtlarındaki kopyası korunur.`)) return;
+  await api("/api/v1/grow-profiles/remove", { method: "POST", body: JSON.stringify({ profile_id: selectedProfileId }) });
+  selectedProfileId = "";
+  await loadState(); currentSetupView = "profiles"; showToast("Profil silindi; yetiştirme geçmişi korunuyor.");
 }
 
 function fluidLabel(fluid) {
@@ -880,8 +928,14 @@ function plantOptions() {
   return (catalog.order || []).map((plantId) => catalog.records?.[plantId]).filter(Boolean);
 }
 
+function growProfileOptions() {
+  const catalog = state.grow_profiles || {};
+  return (catalog.order || []).map((profileId) => catalog.records?.[profileId]).filter(Boolean);
+}
+
 function openStartDialog() {
   const plants = plantOptions();
+  const profiles = growProfileOptions();
   const today = localDate();
   const system = state.system_profile?.system || {};
   openDialog({
@@ -890,7 +944,7 @@ function openStartDialog() {
     submitLabel: "Yetiştirmeyi başlat",
     body: `<p class="start-lead">Bitkini ve yetiştirme profilini seç. Besin seçimi bu profile değil, yalnızca başlatacağın yetiştirmeye kaydedilir.</p>
       <div class="dialog-grid start-core">
-        <label><span>Bitki türü</span><select name="plant_profile_id" data-plant-select>${plants.map((plant) => `<option value="${html(plant.id)}">${html(plant.name)}</option>`).join("")}<option value="">Diğer / kendi bitkim</option></select></label>
+        <label><span>Bitki türü</span><select name="plant_id" data-plant-select>${plants.map((plant) => `<option value="${html(plant.id)}">${html(plant.name)}</option>`).join("")}<option value="">Diğer / kendi bitkim</option></select></label>
         <label data-custom-plant hidden><span>Bitkinin adı</span><input name="plant_species" maxlength="96" placeholder="Tür veya yaygın adı"></label>
         <label><span>Bitki sayısı</span><input name="plant_count" type="number" min="1" value="1" required></label>
         <label data-cannabis-only hidden><span>Büyüme tipi</span><select name="growth_type" data-growth-type><option value="">Seçin</option><option value="photoperiod">Photoperiod</option><option value="autoflower">Autoflower</option></select></label>
@@ -898,6 +952,7 @@ function openStartDialog() {
         <label data-non-cannabis-only><span>Çeşit / cultivar</span><input name="cultivar" placeholder="İsteğe bağlı"></label>
         <label><span>Kaynak</span><input name="source" placeholder="Üretici, mağaza veya parti"></label>
         <label><span>Başlangıç tarihi</span><input name="start_date" type="date" max="${today}" value="${today}" required></label>
+        <label class="full"><span>Yetiştirme profili</span><select name="grow_profile_id" data-grow-profile-select required>${profiles.length ? profiles.map((profile) => `<option value="${html(profile.id)}">${html(profile.name)}</option>`).join("") : '<option value="">Önce Profiller bölümünden profil oluşturun</option>'}</select></label>
         <label><span>İlk aşama</span><select name="initial_stage" data-initial-stage></select></label>
         <div class="profile-preview full" data-profile-preview></div>
         <label><span>Yetiştirme yöntemi</span><select name="growing_method" data-start-method>${optionRows(cultivationMethods, system.growing_method || "RDWC")}</select></label>
@@ -915,9 +970,11 @@ function openStartDialog() {
     onSubmit: submitStartGrow,
   });
   const plantSelect = dialogBody.querySelector("[data-plant-select]");
+  const profileSelect = dialogBody.querySelector("[data-grow-profile-select]");
   const growthSelect = dialogBody.querySelector("[data-growth-type]");
   const stageSelect = dialogBody.querySelector("[data-initial-stage]");
   plantSelect.addEventListener("change", updateStartPlantFields);
+  profileSelect.addEventListener("change", updateStartProfileFields);
   growthSelect.addEventListener("change", updateCultivarOptions);
   stageSelect.addEventListener("change", updateStartProfilePreview);
   dialogBody.querySelector("[data-start-method]").addEventListener("change", updateStartNutrientSets);
@@ -926,11 +983,17 @@ function openStartDialog() {
   dialogBody.querySelector("[data-start-nutrient-set]").addEventListener("change", updateStartNutrientPreview);
   dialogBody.querySelector("[data-start-nutrient-scope]").addEventListener("change", updateStartNutrientPreview);
   updateStartPlantFields();
+  updateStartProfileFields();
 }
 
 function selectedPlant() {
   const plantId = dialogBody.querySelector("[data-plant-select]")?.value;
   return state.plant_catalog?.records?.[plantId];
+}
+
+function selectedGrowProfile() {
+  const profileId = dialogBody.querySelector("[data-grow-profile-select]")?.value;
+  return state.grow_profiles?.records?.[profileId];
 }
 
 function updateStartPlantFields() {
@@ -950,26 +1013,31 @@ function updateStartPlantFields() {
     element.hidden = !custom;
     element.querySelector("input").required = custom;
   });
-  const stageSelect = dialogBody.querySelector("[data-initial-stage]");
-  const stages = plant?.profile?.stages || {};
-  const options = stageOrder.filter((stage) => stages[stage]?.enabled).map((stage) => `<option value="${html(stage)}">${html(state.stage_labels[stage] || stage)}</option>`).join("");
-  stageSelect.innerHTML = options || '<option value="">Örnek profile göre otomatik</option>';
   updateCultivarOptions();
-  updateStartProfilePreview();
   updateStartNutrientSets();
 }
 
+function updateStartProfileFields() {
+  const profile = selectedGrowProfile();
+  const stageSelect = dialogBody.querySelector("[data-initial-stage]");
+  const stages = profile?.stages || {};
+  const options = stageOrder.filter((stage) => stages[stage]?.enabled).map((stage) => `<option value="${html(stage)}">${html(state.stage_labels[stage] || stage)}</option>`).join("");
+  stageSelect.innerHTML = options || '<option value="">Kullanılabilir aşama yok</option>';
+  stageSelect.disabled = !options;
+  updateStartProfilePreview();
+}
+
 function updateStartProfilePreview() {
-  const plant = selectedPlant();
+  const profile = selectedGrowProfile();
   const stage = dialogBody.querySelector("[data-initial-stage]")?.value;
-  const target = plant?.profile?.stages?.[stage];
+  const target = profile?.stages?.[stage];
   const preview = dialogBody.querySelector("[data-profile-preview]");
   if (!preview) return;
   if (!target) {
-    preview.innerHTML = `<span><b>Özel bitki şablonu</b><small>Başlangıç hedefleri daha sonra Bitki Kütüphanesi bölümünden düzenlenebilecek.</small></span>`;
+    preview.innerHTML = `<span><b>Yetiştirme profili seç</b><small>Profiller bitki ve besinlerden bağımsızdır.</small></span>`;
     return;
   }
-  preview.innerHTML = `<span><b>${html(state.stage_labels[stage] || stage)} · ${html(target.planned_days)} gün</b><small>Bu bitki için başlangıç hedefi; istediğin zaman değiştirebilirsin.</small></span>
+  preview.innerHTML = `<span><b>${html(profile.name)} · ${html(state.stage_labels[stage] || stage)} · ${html(target.planned_days)} gün</b><small>Profilin değişmez kopyası bu yetiştirmeye kaydedilir.</small></span>
     <dl><div><dt>Işık</dt><dd>${html(target.photoperiod)} sa · %${html(target.light_intensity)}</dd></div><div><dt>Ortam</dt><dd>${html(target.day_temperature)} °C · %${html(target.humidity)}</dd></div><div><dt>Kök bölgesi</dt><dd>pH ${html(target.ph_min)}–${html(target.ph_max)} · EC ${html(target.ec_min)}–${html(target.ec_max)}</dd></div></dl>`;
 }
 

@@ -3,9 +3,9 @@
 ## Product boundary
 
 GrowAsist Core is the primary product. It runs on Raspberry Pi OS or another
-Linux host and owns cultivation identity, plant profiles, the append-only
-journal, device assignments, sensor history, deterministic safety rules, and
-the read-only Grow Assistant context.
+Linux host and owns cultivation identity, independent plant and grow-profile
+libraries, the append-only journal, device assignments, sensor history,
+deterministic safety rules, and the read-only Grow Assistant context.
 
 Home Assistant becomes an optional adapter. It may supply entities or receive
 GrowAsist state, but GrowAsist Core must start, preserve its journal, and expose
@@ -40,7 +40,8 @@ Browser (Overview / Journal / Library / System)
   │
   ▼
 GrowAsist local API and web panel
-  ├── cultivation/profile service
+  ├── cultivation service
+  ├── independent plant and grow-profile catalogues
   ├── append-only journal store
   ├── sensor history service
   ├── deterministic rules and safety engine (disabled initially)

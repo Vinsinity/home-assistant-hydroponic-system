@@ -87,8 +87,13 @@ def test_setup_tools_remain_visible_and_addressable() -> None:
     assert 'data-setup-shortcut="profiles"' in shell
     assert "state.profiles?.[stage]?.nutrient_ids" not in application
     assert "function renderProfiles" in application
-    assert "Düzenlenebilir başlangıç profili" in application
-    assert "Besin markası · ürün seti · pompa · doz miktarı" in application
+    assert "Bağımsız hedef setleri" in application
+    assert "Bitki türü · cultivar · besin markası · ürün · pompa · doz miktarı" in application
+    assert 'name="plant_id"' in application
+    assert 'name="grow_profile_id"' in application
+    assert "/api/v1/grow-profiles" in application
+    assert "/api/v1/grow-profiles/remove" in application
+    assert "Kopyala" in application
     assert "Markalar ve ürünler" in application
     assert "Benim ürünlerim" in application
     assert "renderNutrientProfiles" not in application

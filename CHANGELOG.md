@@ -14,9 +14,10 @@
   cultivation work, reusable Library records, and physical System setup.
   Preserve stable `#setup/...` routes, with a compact module switcher only on
   mobile where the full sidebar is unavailable.
-- Remove user-owned product IDs from the Plant Library editor. Plant profiles
-  now own crop-specific stage targets only, while nutrients remain independent
-  catalogue/inventory records selected separately for one cultivation.
+- Split plants, grow profiles, and nutrients into independent persistent
+  records. Profiles can be created, copied, renamed, edited, and deleted on
+  their own; they own stage/environment targets but no plant or product IDs.
+  Deleted starter profiles are not silently restored on restart.
 - Add a versioned SQLite manufacturer nutrient catalogue with 367 products from
   20 major brands. The Nutrients workspace now supports brand/product search,
   product details with official source links, and idempotent one-click copying
@@ -28,9 +29,9 @@
 - Give Profiles its own route and keep Nutrients limited to the manufacturer
   product catalogue and the user's owned products. Legacy nutrient IDs are
   removed from plant stages during normalization.
-- Connect grow start to independent profile and nutrient choices. Snapshot the
-  selected catalogue version, product identities, and per-stage product mapping
-  into that cultivation without mutating the reusable profile or owned inventory.
+- Let grow start select the plant, reusable profile, and optional nutrient set
+  separately. Snapshot all three into that cultivation so later edits or profile
+  deletion cannot rewrite the permanent journal.
 - Move Dosing out of System setup and into top-level cultivation navigation;
   keep physical pump mapping, bounded tests, calibration, and safety limits
   together without enabling automatic control.

@@ -11,9 +11,9 @@ The repository now includes a usable Home Assistant-independent product slice:
 - the **Overview** workspace starts and tracks a cultivation from the persistent
   Plant Library, including custom plant species and the versioned Cannabis
   cultivar catalog;
-- the grow-start flow snapshots plant/genetics, editable example targets,
-  method, growing medium, light fixture context, and the selected nutrient
-  program/products;
+- the grow-start flow selects plant/genetics, a reusable grow profile, and an
+  optional nutrient set separately, then snapshots those choices with the
+  method, growing medium, and light fixture context;
 - the append-only **Journal** records water, nutrients, pH, reservoir work,
   maintenance, calibration, stage changes, and notes without exposing update or
   delete operations;
@@ -21,6 +21,9 @@ The repository now includes a usable Home Assistant-independent product slice:
   independent workspaces. Plant Library owns species/cultivar identity, Profiles
   owns stage and environmental targets, Nutrients owns product catalogue and
   inventory, and **Dosing** owns pumps and calibration;
+- **Profiles** is a standalone CRUD library: users can create, copy, rename,
+  edit, or delete any profile. A profile never owns a plant, cultivar, nutrient,
+  pump, or dose, and a deleted starter profile stays deleted;
 - **Nutrients** includes a versioned built-in catalogue of 367 products across
   20 major manufacturers. It contains only **Brands & Products** and **My
   Products**; grow profiles never appear inside this workspace;

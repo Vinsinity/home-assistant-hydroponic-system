@@ -117,7 +117,11 @@ def test_ha_export_import_merges_and_validates_checksum(tmp_path):
         "device_assignments": [],
         "dosing_fluids": [{"id": "ph_up", "name": "pH+"}, {"id": "ph_down", "name": "pH-"}],
     }
-    source.save_state(source_state)
+    saved_source = source.save_state(source_state)
+    saved_source["grow_profiles"]["records"]["tomato_starter"]["name"] = (
+        "Taşınan bağımsız profil"
+    )
+    source.save_state(saved_source)
     export = source.export_journal()
 
     target = GrowAsistStore(tmp_path / "target.db")
@@ -126,6 +130,10 @@ def test_ha_export_import_merges_and_validates_checksum(tmp_path):
     assert "pi_grow" in imported["cultivations"]["records"]
     assert any(event["id"] == "permanent_note" for event in imported["events"])
     assert imported["profiles"]["bloom"]["planned_days"] == 63
+    assert (
+        imported["grow_profiles"]["records"]["tomato_starter"]["name"]
+        == "Taşınan bağımsız profil"
+    )
     assert imported["hardware"]["poll_interval"] == 45
     assert imported["engine_enabled"] is False
 
