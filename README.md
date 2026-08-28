@@ -22,11 +22,15 @@ The repository now includes a usable Home Assistant-independent product slice:
   Nutrients owns reusable manufacturer programs/products, and **Dosing** is a
   top-level cultivation operation rather than a setup module;
 - **Nutrients** includes a versioned built-in catalogue of 367 products across
-  20 major manufacturers plus 79 product-set profiles. The program picker
-  separates water/medium variants, filters by hydroponic, coco, or soil setup,
-  and copies either the core set or an explicitly selected expanded set into the
+  20 major manufacturers. Its default view is the seven persistent plant
+  profiles, not a flat manufacturer-series list. Opening a plant shows its own
+  stage targets; choosing environment, brand, and series places matching
+  products beside those stages;
+- 79 manufacturer product-set mappings stay behind the profile picker. They
+  separate water/medium variants, filter by hydroponic, coco, or soil setup, and
+  copy either the core set or an explicitly selected expanded set into the
   user's library in one atomic operation;
-- selecting a nutrient program at grow start copies its product identities and
+- selecting a brand series for a profile at grow start copies its product identities and
   stage map into an immutable cultivation snapshot. Product-set profiles do not
   invent feed rates; current manufacturer charts and actual plant/water
   conditions remain authoritative;

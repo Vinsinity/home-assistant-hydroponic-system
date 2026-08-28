@@ -25,6 +25,10 @@
   medium/water variants for manufacturer lines where products are alternatives.
   Filter recommendations by hydroponic, coco, or soil setup and import a core or
   expanded product set atomically without treating the profile as a dose chart.
+- Keep those manufacturer mappings behind a profile-first Nutrients screen.
+  The primary library contains the seven persistent plant profiles; opening one
+  shows its stage targets and places the selected brand series' products beside
+  each applicable stage instead of exposing a long program list.
 - Connect grow start to the plant → environment → brand → program flow and
   snapshot the selected catalogue version, product identities, and per-stage
   mapping into the immutable cultivation record.

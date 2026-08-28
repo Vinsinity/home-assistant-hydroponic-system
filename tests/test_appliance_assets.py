@@ -86,8 +86,9 @@ def test_setup_tools_remain_visible_and_addressable() -> None:
     assert 'data-setup-shortcut="dosing"' not in shell
     assert 'data-setup-shortcut="profiles"' not in shell
     assert "state.profiles?.[stage]?.nutrient_ids" not in application
-    assert "Hazır program kütüphanesi" in application
-    assert "Ürün kütüphanesi" in application
+    assert "Profil kütüphanesi" in application
+    assert "Düzenlenebilir yetiştirme profili" in application
+    assert "Markalar ve ürünler" in application
     assert "Benim ürünlerim" in application
     assert "/api/v1/nutrients/catalog/add" in application
     assert "/api/v1/nutrient-programs/add" in application
@@ -101,6 +102,7 @@ def test_setup_tools_remain_visible_and_addressable() -> None:
     assert "I²C adresi" not in application
     assert "Ölçülen hacim · ml" in application
     assert "data-start-program" in application
+    assert "Profilin ürünleri" in application
     assert "Aşama hedefleri" in application
     assert "stageNutrientFields" not in application
     assert "#setup/${setupView || currentSetupView}" in application
