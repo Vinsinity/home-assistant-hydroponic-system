@@ -47,6 +47,10 @@ from custom_components.hydroponic_system.plant_catalog import (
 from . import __version__
 from .discovery import NetworkDiscovery
 from .hardware_gateway import I2CHardwareGateway
+from .nutrient_inventory import (
+    normalize_nutrient_inventory,
+    normalize_nutrient_record,
+)
 from .storage import GrowAsistStore
 
 
@@ -162,6 +166,7 @@ class GrowAsistService:
             "plant_catalog": deepcopy(state.get("plant_catalog", {})),
             "grow_profiles": deepcopy(state.get("grow_profiles", {})),
             "nutrient_catalog": deepcopy(state.get("nutrient_catalog", {})),
+            "nutrient_inventory": deepcopy(state.get("nutrient_inventory", {})),
             "system_profile": deepcopy(state.get("system_profile", {})),
             "hardware": deepcopy(state.get("hardware", {})),
             "assistant_settings": deepcopy(state.get("assistant_settings", {})),
@@ -288,6 +293,39 @@ class GrowAsistService:
         }
         return identity, snapshot
 
+    @staticmethod
+    def _cultivation_iot_snapshot(state: dict[str, Any]) -> dict[str, Any]:
+        """Freeze approved IoT identities without discovery noise or credentials."""
+        registry = state.get("device_registry", {})
+        devices = registry.get("devices", {}) if isinstance(registry, dict) else {}
+        safe_keys = (
+            "id", "name", "vendor", "manufacturer", "model", "generation",
+            "firmware", "protocol", "role", "capabilities", "supported",
+            "verified", "connection_status",
+        )
+        records = []
+        for device_id, value in devices.items():
+            if not isinstance(value, dict):
+                continue
+            record = {
+                key: deepcopy(value[key]) for key in safe_keys if key in value
+            }
+            record["id"] = str(record.get("id") or device_id)[:128]
+            records.append(record)
+        records.sort(key=lambda item: item["id"])
+        return {"schema_version": 1, "devices": records}
+
+    @staticmethod
+    def _cultivation_i2c_snapshot(state: dict[str, Any]) -> dict[str, Any]:
+        """Freeze approved local hardware, excluding volatile scan candidates."""
+        hardware = state.get("hardware", {})
+        return {
+            "schema_version": 1,
+            "i2c_bus": int(hardware.get("i2c_bus", 1)),
+            "poll_interval": int(hardware.get("poll_interval", 30)),
+            "device_assignments": deepcopy(hardware.get("device_assignments", [])),
+        }
+
     def start_cultivation(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Create one cultivation and its immutable lifecycle events."""
         with self._mutation_lock:
@@ -344,10 +382,9 @@ class GrowAsistService:
                 selected_catalog_ids = list(dict.fromkeys(selected_catalog_ids))
 
             fluid_records = {
-                str(item.get("id")): item
-                for item in state.get("hardware", {}).get("dosing_fluids", [])
+                str(item_id): item
+                for item_id, item in state.get("nutrient_inventory", {}).get("records", {}).items()
                 if isinstance(item, dict)
-                and item.get("id")
                 and not item.get("required")
                 and item.get("category") not in {"ph", "ph_up", "ph_down"}
             }
@@ -451,6 +488,8 @@ class GrowAsistService:
                 plant_snapshot=plant_snapshot,
                 grow_profile_snapshot=grow_profile_snapshot(selected_grow_profile),
                 genetics_snapshot=genetics_snapshot,
+                iot_snapshot=self._cultivation_iot_snapshot(state),
+                i2c_snapshot=self._cultivation_i2c_snapshot(state),
                 nutrient_program_snapshot={
                     "name": nutrient_program,
                     "nutrient_ids": nutrient_ids,
@@ -646,36 +685,8 @@ class GrowAsistService:
             saved = self.store.save_state(state)
             return deepcopy(saved["plant_catalog"]["records"][plant_id])
 
-    @staticmethod
-    def _normalize_fluid(value: Any, *, required_id: str | None = None) -> dict[str, Any]:
-        value = value if isinstance(value, dict) else {}
-        fluid_id = required_id or _text(value.get("id"), 64).lower()
-        if not _ID_PATTERN.fullmatch(fluid_id):
-            raise ValueError(f"Geçersiz sıvı kimliği: {fluid_id}")
-        default_name = "pH+" if fluid_id == "ph_up" else "pH−" if fluid_id == "ph_down" else fluid_id
-        return {
-            "id": fluid_id,
-            "name": _text(value.get("name"), 64, default_name),
-            "brand": _text(value.get("brand"), 64, "Belirtilmedi"),
-            "category": "ph" if required_id else _text(value.get("category"), 32, "other"),
-            "catalog_id": _text(value.get("catalog_id"), 96),
-            "line": _text(value.get("line"), 64),
-            "part": _text(value.get("part"), 32),
-            "npk": _text(value.get("npk"), 32),
-            "phase": _text(value.get("phase"), 32),
-            "medium": _text(value.get("medium"), 32),
-            "ph_direction": _text(value.get("ph_direction"), 8),
-            "form": _text(value.get("form"), 24),
-            "input_type": _text(value.get("input_type"), 24),
-            "description": _text(value.get("description"), 480),
-            "source_url": _text(value.get("source_url"), 320),
-            "verified_on": _text(value.get("verified_on"), 16),
-            "official": bool(value.get("official", False)),
-            "required": bool(required_id),
-        }
-
     def add_catalog_nutrient(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Copy one official catalogue product into the user's fluid library."""
+        """Copy one official catalogue product into the user's inventory."""
         catalog_id = _text(payload.get("catalog_id"), 96)
         if not catalog_id:
             raise ValueError("Katalog ürünü seçilmelidir")
@@ -683,10 +694,7 @@ class GrowAsistService:
             state = self.store.load_state()
             created, fluid = self._ensure_catalog_fluid(state, catalog_id)
             saved = self.store.save_state(state)
-            stored = next(
-                item for item in saved["hardware"]["dosing_fluids"]
-                if item.get("id") == fluid["id"]
-            )
+            stored = saved["nutrient_inventory"]["records"][fluid["id"]]
             return {"created": created, "fluid": deepcopy(stored)}
 
     def _ensure_catalog_fluid(
@@ -696,10 +704,13 @@ class GrowAsistService:
         product = state.get("nutrient_catalog", {}).get("products", {}).get(catalog_id)
         if not isinstance(product, dict):
             raise ValueError("Katalog ürünü bulunamadı")
-        fluids = state.setdefault("hardware", {}).setdefault("dosing_fluids", [])
+        inventory = state.setdefault(
+            "nutrient_inventory", normalize_nutrient_inventory(None)
+        )
+        records = inventory.setdefault("records", {})
         existing = next(
             (
-                item for item in fluids
+                item for item in records.values()
                 if isinstance(item, dict) and item.get("catalog_id") == catalog_id
             ),
             None,
@@ -726,8 +737,11 @@ class GrowAsistService:
             "ph_direction": ph_direction,
             "required": False,
         })
-        normalized = self._normalize_fluid(raw)
-        fluids.append(normalized)
+        normalized = normalize_nutrient_record(raw)
+        records[fluid_id] = normalized
+        order = inventory.setdefault("order", [])
+        if fluid_id not in order:
+            order.append(fluid_id)
         return True, normalized
 
     def add_nutrient_program(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -752,15 +766,41 @@ class GrowAsistService:
                 created, fluid = self._ensure_catalog_fluid(state, str(catalog_id))
                 (added if created else existing).append(deepcopy(fluid))
             saved = self.store.save_state(state)
-            saved_by_id = {
-                item["id"]: item for item in saved["hardware"]["dosing_fluids"]
-            }
+            saved_by_id = saved["nutrient_inventory"]["records"]
             return {
                 "program_id": program_id,
                 "scope": scope,
                 "added": [deepcopy(saved_by_id[item["id"]]) for item in added],
                 "existing": [deepcopy(saved_by_id[item["id"]]) for item in existing],
             }
+
+    def update_nutrient_inventory(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Persist owned products independently from plants, profiles and hardware."""
+        with self._mutation_lock:
+            state = self.store.load_state()
+            raw = payload
+            if "dosing_fluids" in payload and "products" not in payload:
+                raw = {"products": payload["dosing_fluids"]}
+            inventory = normalize_nutrient_inventory(raw)
+            fluid_ids = set(inventory["records"])
+            assigned_ids = {
+                str(channel.get("fluid_id"))
+                for assignment in state.get("hardware", {}).get("device_assignments", [])
+                if isinstance(assignment, dict)
+                for channel in assignment.get("channels", [])
+                if isinstance(channel, dict)
+                and channel.get("fluid_id") not in {None, "", "unassigned"}
+            }
+            missing = sorted(assigned_ids - fluid_ids)
+            if missing:
+                raise ValueError(
+                    "Silmeden önce ürünü dozaj pompasından kaldırın: "
+                    + ", ".join(missing)
+                )
+            state["nutrient_inventory"] = inventory
+            state["engine_enabled"] = False
+            saved = self.store.save_state(state)
+            return deepcopy(saved["nutrient_inventory"])
 
     @staticmethod
     def _normalize_calibration(value: Any) -> dict[str, Any] | None:
@@ -864,44 +904,28 @@ class GrowAsistService:
         return result
 
     def update_hardware(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Persist hardware definitions, fluid mappings and safety limits only."""
+        """Persist local I²C definitions, product references and safety limits."""
         with self._mutation_lock:
             state = self.store.load_state()
+            # Accept old clients once, but immediately migrate their product list
+            # into the independent inventory instead of storing it in hardware.
+            if "dosing_fluids" in payload:
+                state["nutrient_inventory"] = normalize_nutrient_inventory(
+                    {"products": payload["dosing_fluids"]}
+                )
             hardware = deepcopy(state.get("hardware", {}))
-            for key in ("i2c_bus", "poll_interval", "device_assignments", "dosing_fluids", "dosing_policy"):
+            for key in ("i2c_bus", "poll_interval", "device_assignments", "dosing_policy"):
                 if key in payload:
                     hardware[key] = deepcopy(payload[key])
 
-            raw_fluids = hardware.get("dosing_fluids", [])
-            if not isinstance(raw_fluids, list):
-                raise ValueError("Besin ve sıvı kataloğu bir liste olmalı")
-            indexed = {
-                str(item.get("id")): item
-                for item in raw_fluids
-                if isinstance(item, dict) and item.get("id")
-            }
-            fluids = [
-                self._normalize_fluid(indexed.get("ph_up"), required_id="ph_up"),
-                self._normalize_fluid(indexed.get("ph_down"), required_id="ph_down"),
-            ]
-            seen = {"ph_up", "ph_down"}
-            for raw in raw_fluids:
-                if not isinstance(raw, dict):
-                    continue
-                fluid_id = str(raw.get("id") or "").lower()
-                if not fluid_id or fluid_id in seen:
-                    continue
-                fluid = self._normalize_fluid(raw)
-                seen.add(fluid["id"])
-                fluids.append(fluid)
+            fluid_ids = set(state.get("nutrient_inventory", {}).get("records", {}))
 
             hardware = {
                 "i2c_bus": _bounded_number(hardware.get("i2c_bus"), 1, 0, 255, True),
                 "poll_interval": _bounded_number(hardware.get("poll_interval"), 30, 10, 300, True),
                 "dosing_policy": self._normalize_dosing_policy(hardware.get("dosing_policy")),
-                "dosing_fluids": fluids,
                 "device_assignments": self._normalize_assignments(
-                    hardware.get("device_assignments", []), seen
+                    hardware.get("device_assignments", []), fluid_ids
                 ),
             }
             state["hardware"] = hardware
@@ -990,9 +1014,8 @@ class GrowAsistService:
                 assignments[assignments.index(existing)] = assignment
 
             fluid_ids = {
-                str(item.get("id"))
-                for item in hardware.get("dosing_fluids", [])
-                if isinstance(item, dict) and item.get("id")
+                str(item_id)
+                for item_id in state.get("nutrient_inventory", {}).get("records", {})
             }
             hardware["device_assignments"] = self._normalize_assignments(
                 assignments, fluid_ids

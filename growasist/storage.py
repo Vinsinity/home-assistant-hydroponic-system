@@ -42,6 +42,12 @@ from custom_components.hydroponic_system.plant_catalog import (
     normalize_plant_identity_catalog,
 )
 
+from .nutrient_inventory import (
+    NUTRIENT_INVENTORY_SCHEMA_VERSION,
+    default_nutrient_inventory,
+    normalize_nutrient_inventory,
+)
+
 
 DATABASE_SCHEMA_VERSION = 1
 
@@ -69,6 +75,7 @@ def default_state() -> dict[str, Any]:
         "plant_catalog": default_plant_identity_catalog(),
         "grow_profiles": default_grow_profile_catalog(),
         "nutrient_catalog": default_nutrient_catalog(),
+        "nutrient_inventory": default_nutrient_inventory(),
         "cultivations": empty_cultivations(),
         "events": [],
         "hardware": {
@@ -76,10 +83,6 @@ def default_state() -> dict[str, Any]:
             "poll_interval": 30,
             "dosing_policy": deepcopy(DEFAULT_DOSING_POLICY),
             "device_assignments": [],
-            "dosing_fluids": [
-                {"id": "ph_up", "name": "pH+", "category": "ph", "ph_direction": "up", "required": True},
-                {"id": "ph_down", "name": "pH−", "category": "ph", "ph_direction": "down", "required": True},
-            ],
         },
         "device_registry": {
             "schema_version": 3,
@@ -134,6 +137,8 @@ class GrowAsistStore:
         catalog = state.get("nutrient_catalog") if isinstance(state, dict) else None
         profiles = state.get("grow_profiles") if isinstance(state, dict) else None
         plants = state.get("plant_catalog") if isinstance(state, dict) else None
+        inventory = state.get("nutrient_inventory") if isinstance(state, dict) else None
+        hardware = state.get("hardware") if isinstance(state, dict) else None
         nutrient_upgrade = (
             not isinstance(catalog, dict)
             or catalog.get("catalog_version") != NUTRIENT_CATALOG_VERSION
@@ -155,10 +160,15 @@ class GrowAsistStore:
                 )
             )
         )
-        if nutrient_upgrade or profile_upgrade or plant_upgrade:
+        inventory_upgrade = (
+            not isinstance(inventory, dict)
+            or inventory.get("schema_version") != NUTRIENT_INVENTORY_SCHEMA_VERSION
+            or (isinstance(hardware, dict) and "dosing_fluids" in hardware)
+        )
+        if nutrient_upgrade or profile_upgrade or plant_upgrade or inventory_upgrade:
             state = state if isinstance(state, dict) else default_state()
             # The manufacturer catalogue is versioned application data.  User
-            # products remain in hardware.dosing_fluids and are never replaced.
+            # products live in a separate inventory and are never replaced.
             if nutrient_upgrade:
                 state["nutrient_catalog"] = default_nutrient_catalog()
             if not isinstance(profiles, dict):
@@ -317,14 +327,15 @@ class GrowAsistStore:
         # Built-in manufacturer facts are read-only and upgraded as a unit.
         # Imported state must not be able to replace official catalogue data.
         result["nutrient_catalog"] = default_nutrient_catalog()
-        fluids = result.get("hardware", {}).get("dosing_fluids", [])
-        if isinstance(fluids, list):
-            for fluid in fluids:
-                if not isinstance(fluid, dict) or fluid.get("id") not in {"ph_up", "ph_down"}:
-                    continue
-                fluid["category"] = "ph"
-                fluid["required"] = True
-                fluid["ph_direction"] = "up" if fluid["id"] == "ph_up" else "down"
+        raw_hardware = value.get("hardware") if isinstance(value.get("hardware"), dict) else {}
+        result["nutrient_inventory"] = normalize_nutrient_inventory(
+            value.get("nutrient_inventory"),
+            legacy_fluids=raw_hardware.get("dosing_fluids"),
+        )
+        normalized_hardware = deepcopy(default_state()["hardware"])
+        normalized_hardware.update(deepcopy(raw_hardware))
+        result["hardware"] = normalized_hardware
+        result["hardware"].pop("dosing_fluids", None)
         # The retired standalone `profiles` field mixed targets with legacy
         # product ids. Only the independent grow_profiles catalogue survives.
         result.pop("profiles", None)
@@ -449,6 +460,14 @@ class GrowAsistStore:
             )
         if isinstance(export.get("hardware"), dict):
             state["hardware"] = deepcopy(export["hardware"])
+        if isinstance(export.get("nutrient_inventory"), dict):
+            state["nutrient_inventory"] = normalize_nutrient_inventory(
+                export["nutrient_inventory"]
+            )
+        elif isinstance(export.get("hardware"), dict):
+            state["nutrient_inventory"] = normalize_nutrient_inventory(
+                None, legacy_fluids=export["hardware"].get("dosing_fluids")
+            )
         if isinstance(export.get("assistant_settings"), dict):
             state["assistant_settings"] = deepcopy(export["assistant_settings"])
         return self.save_state(state)
@@ -465,6 +484,7 @@ class GrowAsistStore:
             "current_system_profile": deepcopy(state.get("system_profile", {})),
             "plant_catalog": deepcopy(state.get("plant_catalog", {})),
             "grow_profiles": deepcopy(state.get("grow_profiles", {})),
+            "nutrient_inventory": deepcopy(state.get("nutrient_inventory", {})),
             "hardware": deepcopy(state.get("hardware", {})),
             "assistant_settings": deepcopy(state.get("assistant_settings", {})),
         }

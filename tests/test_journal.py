@@ -67,6 +67,15 @@ def _record(record_id: str, start_date: str):
                 {"id": "base_b", "name": "Base B"},
             ],
         },
+        iot_snapshot={
+            "schema_version": 1,
+            "devices": [{"id": "shelly-light", "role": "light_dimmer"}],
+        },
+        i2c_snapshot={
+            "schema_version": 1,
+            "i2c_bus": 1,
+            "device_assignments": [{"address": 0x63, "driver": "atlas_ph"}],
+        },
         cultivation_id=record_id,
         timestamp=f"{start_date}T08:00:00+00:00",
     )
@@ -115,6 +124,10 @@ def test_cultivation_keeps_its_system_snapshot_in_record_and_start_event():
     assert started["data"]["genetics_snapshot"] == record["genetics_snapshot"]
     assert record["nutrient_program_snapshot"]["nutrient_ids"] == ["base_a", "base_b"]
     assert started["data"]["nutrient_program_snapshot"] == record["nutrient_program_snapshot"]
+    assert record["iot_snapshot"]["devices"][0]["id"] == "shelly-light"
+    assert started["data"]["iot_snapshot"] == record["iot_snapshot"]
+    assert record["i2c_snapshot"]["device_assignments"][0]["address"] == 0x63
+    assert started["data"]["i2c_snapshot"] == record["i2c_snapshot"]
     assert record["identity"]["cultivar_id"] == "example_marmande"
     assert record["identity"]["growing_medium"] == "Expanded clay"
 

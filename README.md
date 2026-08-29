@@ -13,7 +13,8 @@ The repository now includes a usable Home Assistant-independent product slice:
   cultivar catalog;
 - the grow-start flow selects plant/genetics, a reusable grow profile, and an
   optional nutrient set separately, then snapshots those choices with the
-  method, growing medium, and light fixture context;
+  method, growing medium, safe approved-IoT identities, and approved local I²C
+  assignments;
 - the append-only **Journal** records water, nutrients, pH, reservoir work,
   maintenance, calibration, stage changes, and notes without exposing update or
   delete operations;
@@ -25,9 +26,11 @@ The repository now includes a usable Home Assistant-independent product slice:
   edit, or delete any profile. A profile never owns a plant, cultivar, nutrient,
   pump, or dose, and a deleted starter profile stays deleted;
 - the persisted schemas enforce the same boundary: Plant Library records carry
-  no stage targets, Profiles carry no plant/product references, and Nutrients
-  carry no plant/profile references. Only a cultivation stores the three
-  separately selected immutable snapshots;
+  no stage targets, Profiles carry no plant/product references, the independent
+  nutrient inventory carries no plant/profile/hardware records, IoT owns only
+  approved network devices, and local Hardware owns only I²C assignments and
+  safety configuration. Only a cultivation combines their separate immutable
+  snapshots;
 - **Nutrients** includes a versioned built-in catalogue of 367 products across
   20 major manufacturers. It contains only **Brands & Products** and **My
   Products**; grow profiles never appear inside this workspace;
@@ -38,8 +41,9 @@ The repository now includes a usable Home Assistant-independent product slice:
   the grow profile or silently add products to the user's inventory. These
   mappings contain no feed rates; current manufacturer charts and actual
   plant/water conditions remain authoritative;
-- nutrient-product identity, physical hardware, and pump/fluid mapping remain
-  separate records, and saving any of them never enables equipment control;
+- nutrient-product identity and physical hardware remain separate records. A
+  pump channel keeps only a nutrient ID reference and calibration; saving any
+  of them never enables equipment control;
 - SQLite WAL storage keeps immutable journal events and full state revisions;
 - checksummed exports from the current Home Assistant panel can be merged with
   `growasist import-ha` without treating missing events as deletions;
@@ -58,8 +62,9 @@ control remains disabled in this slice.
 
 On the Raspberry Pi appliance, open `http://<raspberry-pi-ip>` and enter the
 first-boot token. Container development remains on port `8080`. Home Assistant
-is not required by this runtime. System → Hardware now performs read-only
-Atlas/PCA9685 I2C and Shelly, TP-Link/Tapo, Tuya-candidate, and SSDP discovery.
+is not required by this runtime. Yerel Donanım performs read-only Atlas/PCA9685
+I²C discovery, while IoT Cihazları separately discovers Shelly, TP-Link/Tapo,
+Tuya candidates, and SSDP devices.
 I2C addresses come from the physical bus rather than a manual form. Every
 candidate requires explicit enrolment; PCA9685-compatible responses also require
 the user to confirm the attached board type. Network authentication and

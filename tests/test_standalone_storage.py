@@ -158,16 +158,18 @@ def test_online_backup_is_a_valid_independent_database(tmp_path):
 def test_manufacturer_catalog_is_persisted_without_replacing_user_fluids(tmp_path):
     store = GrowAsistStore(tmp_path / "growasist.db")
     state = store.load_state()
-    state["hardware"]["dosing_fluids"].append(
-        {"id": "my_mix", "name": "My Mix", "category": "base"}
-    )
+    state["nutrient_inventory"]["records"]["my_mix"] = {
+        "id": "my_mix", "name": "My Mix", "category": "base"
+    }
+    state["nutrient_inventory"]["order"].append("my_mix")
     store.save_state(state)
 
     restarted = GrowAsistStore(store.database_path).load_state()
 
     assert len(restarted["nutrient_catalog"]["products"]) >= 367
-    assert any(item["id"] == "my_mix" for item in restarted["hardware"]["dosing_fluids"])
-    assert restarted["hardware"]["dosing_fluids"][0]["category"] == "ph"
+    assert restarted["nutrient_inventory"]["records"]["my_mix"]["name"] == "My Mix"
+    assert restarted["nutrient_inventory"]["records"]["ph_up"]["category"] == "ph"
+    assert "dosing_fluids" not in restarted["hardware"]
 
 
 def test_catalog_upgrade_keeps_selected_products_and_immutable_journal(tmp_path):
@@ -201,7 +203,8 @@ def test_catalog_upgrade_keeps_selected_products_and_immutable_journal(tmp_path)
     upgraded = upgraded_store.load_state()
 
     assert len(upgraded["nutrient_catalog"]["products"]) >= 367
-    assert any(item["id"] == "my_base" for item in upgraded["hardware"]["dosing_fluids"])
+    assert upgraded["nutrient_inventory"]["records"]["my_base"]["name"] == "My Base"
+    assert "dosing_fluids" not in upgraded["hardware"]
     assert any(event["id"] == "permanent_note" for event in upgraded["events"])
     assert upgraded_store.health()["event_count"] == 3
 

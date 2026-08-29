@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Move the user's owned nutrient products out of hardware into an independent,
+  versioned `nutrient_inventory`. Preserve every legacy product during SQLite
+  migration; I²C pump channels retain only a product ID reference.
+- Keep IoT discovery/enrolment, local I²C discovery/assignments, reusable grow
+  profiles, plant identities, manufacturer facts, and owned products as
+  separate ledgers. At grow start, copy the selected plant/profile/nutrients
+  plus safe approved-IoT and I²C snapshots into that cultivation and its
+  immutable start event.
+
 - Start the Home Assistant-independent GrowAsist Core for Raspberry Pi OS.
 - Add a read-only versioned HTTP service and Raspberry Pi-compatible container.
 - Add SQLite WAL persistence with full synchronous commits, immutable journal
@@ -58,7 +67,7 @@
   loading, and a two-step physical pump calibration that can only save ml/s
   after a confirmed bounded motor run. Serialize all motor actions and always
   stop the selected channel when the run ends or fails.
-- Include profiles, hardware, dosing fluids, safety policy, and Assistant
+- Include profiles, hardware, the independent nutrient inventory, safety policy, and Assistant
   settings in checksummed exports so moving away from Home Assistant does not
   hide or discard the system configuration.
 - Add standalone application services and API routes for starting/finishing a

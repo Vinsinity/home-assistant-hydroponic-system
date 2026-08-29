@@ -1,9 +1,12 @@
 # Manufacturer nutrient catalogue
 
 GrowAsist ships a versioned, read-only manufacturer catalogue. It is separate
-from `hardware.dosing_fluids`, which is the user's selected product list. A
-catalogue update cannot remove a selected product or rewrite a cultivation
-snapshot.
+from the top-level `nutrient_inventory`, which is the user's selected product
+list. Local I²C hardware stores only a `fluid_id` reference when a pump is
+assigned; it never embeds the product. A catalogue update cannot remove a
+selected product or rewrite a cultivation snapshot. Existing
+`hardware.dosing_fluids` records are migrated losslessly into the independent
+inventory and removed from hardware state.
 
 Catalogue version `2026.08.28.3` contains 367 products from 20 manufacturers
 and 79 internal product-set mappings:

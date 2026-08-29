@@ -31,6 +31,11 @@ def _start_payload(**overrides):
     }
 
 
+def _owned_products(bootstrap):
+    inventory = bootstrap["nutrient_inventory"]
+    return [inventory["records"][item] for item in inventory["order"]]
+
+
 def test_service_tracks_a_complete_grow_without_home_assistant(tmp_path):
     store = GrowAsistStore(tmp_path / "growasist.db")
     service = GrowAsistService(store)
@@ -183,7 +188,7 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
 
     bootstrap = service.bootstrap()
-    assert set(("plant_catalog", "grow_profiles", "nutrient_catalog", "hardware", "assistant_settings")) <= set(bootstrap)
+    assert set(("plant_catalog", "grow_profiles", "nutrient_catalog", "nutrient_inventory", "hardware", "assistant_settings")) <= set(bootstrap)
     assert "profiles" not in bootstrap
     assert len(bootstrap["nutrient_catalog"]["products"]) >= 367
     assert bootstrap["plant_catalog"]["records"]["cannabis"]["cultivars"]
@@ -204,15 +209,15 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
             },
         }
     )
+    service.update_nutrient_inventory({"products": [
+        {"id": "ph_up", "name": "pH+"},
+        {"id": "ph_down", "name": "pH-"},
+        {"id": "bloom_a", "name": "Bloom A", "category": "base"},
+    ]})
     hardware = service.update_hardware(
         {
             "i2c_bus": 1,
             "poll_interval": 45,
-            "dosing_fluids": [
-                {"id": "ph_up", "name": "pH+"},
-                {"id": "ph_down", "name": "pH-"},
-                {"id": "bloom_a", "name": "Bloom A", "category": "base"},
-            ],
             "device_assignments": [
                 {"address": "0x63", "driver": "atlas_ph", "name": "EZO pH"},
                 {
@@ -234,7 +239,8 @@ def test_setup_modules_are_visible_and_persist_without_enabling_control(tmp_path
     assert hardware["poll_interval"] == 45
     assert hardware["device_assignments"][1]["channels"][0]["calibration"]["flow_ml_s"] == 1.2
     assert restarted["grow_profiles"]["records"]["extended_fruiting"]["stages"]["bloom"]["planned_days"] == 63
-    assert restarted["hardware"]["dosing_fluids"][2]["id"] == "bloom_a"
+    assert _owned_products(restarted)[2]["id"] == "bloom_a"
+    assert "dosing_fluids" not in restarted["hardware"]
     assert restarted["engine_enabled"] is False
 
 
@@ -258,7 +264,7 @@ def test_i2c_discovery_enrollment_and_removal_preserve_fluids(tmp_path, monkeypa
 
     monkeypatch.setattr("growasist.service.I2CHardwareGateway", FakeGateway)
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
-    service.update_hardware({"dosing_fluids": [
+    service.update_nutrient_inventory({"products": [
         {"id": "ph_up", "name": "pH+"},
         {"id": "ph_down", "name": "pH-"},
         {"id": "bloom_a", "name": "Bloom A", "category": "base"},
@@ -283,7 +289,7 @@ def test_i2c_discovery_enrollment_and_removal_preserve_fluids(tmp_path, monkeypa
     assert discovered["health"]["available"] is True
     assert removed["removed"]["name"] == "Dozaj kartı"
     assert restored["channels"][0]["fluid_id"] == "bloom_a"
-    assert any(item["id"] == "bloom_a" for item in bootstrap["hardware"]["dosing_fluids"])
+    assert any(item["id"] == "bloom_a" for item in _owned_products(bootstrap))
     assert bootstrap["hardware"]["device_assignments"] == []
     assert bootstrap["i2c_registry"]["retired_assignments"][0]["address"] == 0x40
 
@@ -340,7 +346,7 @@ def test_official_catalog_product_is_added_once_and_keeps_details(tmp_path):
 
     first = service.add_catalog_nutrient({"catalog_id": product["id"]})
     second = service.add_catalog_nutrient({"catalog_id": product["id"]})
-    fluids = service.bootstrap()["hardware"]["dosing_fluids"]
+    fluids = _owned_products(service.bootstrap())
     imported = [item for item in fluids if item.get("catalog_id") == product["id"]]
 
     assert first["created"] is True
@@ -364,7 +370,7 @@ def test_catalog_program_adds_the_set_atomically_and_deduplicates(tmp_path):
     first = service.add_nutrient_program({"program_id": program["id"], "scope": "core"})
     second = service.add_nutrient_program({"program_id": program["id"], "scope": "core"})
     local_catalog_ids = {
-        item.get("catalog_id") for item in service.bootstrap()["hardware"]["dosing_fluids"]
+        item.get("catalog_id") for item in _owned_products(service.bootstrap())
     }
 
     assert len(first["added"]) == len(program["core_product_ids"])
@@ -376,7 +382,7 @@ def test_catalog_program_adds_the_set_atomically_and_deduplicates(tmp_path):
 def test_grow_start_snapshots_a_catalog_set_without_changing_inventory(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
     catalog = service.bootstrap()["nutrient_catalog"]
-    owned_before = service.bootstrap()["hardware"]["dosing_fluids"]
+    owned_before = _owned_products(service.bootstrap())
     program = next(
         item for item in catalog["programs"].values()
         if item["brand_id"] == "canna" and item["line"] == "CANNA AQUA"
@@ -399,7 +405,7 @@ def test_grow_start_snapshots_a_catalog_set_without_changing_inventory(tmp_path)
     assert snapshot["catalog_version"] == catalog["catalog_version"]
     assert snapshot["stages"]["veg"]["catalog_product_ids"]
     assert snapshot["stages"]["veg"]["nutrient_ids"] == []
-    assert service.bootstrap()["hardware"]["dosing_fluids"] == owned_before
+    assert _owned_products(service.bootstrap()) == owned_before
 
 
 def test_grow_start_rejects_a_program_for_the_wrong_environment(tmp_path):
@@ -419,8 +425,8 @@ def test_grow_start_rejects_a_program_for_the_wrong_environment(tmp_path):
 
 def test_grow_start_snapshots_selected_nutrient_products(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
-    service.update_hardware({
-        "dosing_fluids": [
+    service.update_nutrient_inventory({
+        "products": [
             {"id": "ph_up", "name": "pH+", "category": "ph"},
             {"id": "ph_down", "name": "pH-", "category": "ph"},
             {"id": "bloom_a", "name": "Bloom A", "brand": "Test", "category": "base"},
@@ -442,8 +448,8 @@ def test_grow_start_snapshots_selected_nutrient_products(tmp_path):
 
 def test_plant_profile_and_nutrient_ledgers_have_no_cross_links(tmp_path):
     service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
-    service.update_hardware({
-        "dosing_fluids": [
+    service.update_nutrient_inventory({
+        "products": [
             {"id": "ph_up", "name": "pH+", "category": "ph"},
             {"id": "ph_down", "name": "pH-", "category": "ph"},
             {"id": "tomato_a", "name": "Tomato A", "category": "base"},
@@ -465,6 +471,87 @@ def test_plant_profile_and_nutrient_ledgers_have_no_cross_links(tmp_path):
     )
     assert all("plant_id" not in product for product in nutrients["products"].values())
     assert all("grow_profile_id" not in program for program in nutrients["programs"].values())
+
+
+def test_grow_start_combines_separate_ledgers_as_immutable_snapshots(tmp_path):
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    service.update_nutrient_inventory({"products": [
+        {"id": "ph_up", "name": "pH+"},
+        {"id": "ph_down", "name": "pH-"},
+        {"id": "base_a", "name": "Base A", "category": "base"},
+    ]})
+    service.update_hardware({"device_assignments": [
+        {"address": 0x63, "driver": "atlas_ph", "name": "EZO pH"},
+        {
+            "address": 0x40,
+            "driver": "waveshare_motor_hat",
+            "name": "Motor HAT",
+            "channels": [
+                {"id": "A", "fluid_id": "base_a", "pump": {}, "calibration": None},
+                {"id": "B", "fluid_id": "unassigned", "pump": {}, "calibration": None},
+            ],
+        },
+    ]})
+    state = service.store.load_state()
+    state["device_registry"]["devices"]["shelly-light"] = {
+        "id": "shelly-light",
+        "name": "Grow light",
+        "vendor": "Shelly",
+        "model": "0-10V Dimmer",
+        "role": "light_dimmer",
+        "capabilities": ["brightness"],
+        "host": "10.1.1.50",
+        "mac": "AA:BB:CC:DD:EE:FF",
+        "access_token": "must-not-enter-journal",
+    }
+    service.store.save_state(state)
+
+    cultivation = service.start_cultivation(_start_payload(
+        nutrient_ids=["base_a"], nutrient_program="Base program"
+    ))
+    bootstrap = service.bootstrap()
+
+    assert "dosing_fluids" not in bootstrap["hardware"]
+    assert bootstrap["nutrient_inventory"]["records"]["base_a"]["name"] == "Base A"
+    assert cultivation["plant_snapshot"]["id"] == "tomato"
+    assert cultivation["grow_profile_snapshot"]["id"] == "extended_fruiting"
+    assert cultivation["nutrient_program_snapshot"]["nutrient_ids"] == ["base_a"]
+    assert cultivation["iot_snapshot"]["devices"][0]["id"] == "shelly-light"
+    assert "host" not in cultivation["iot_snapshot"]["devices"][0]
+    assert "mac" not in cultivation["iot_snapshot"]["devices"][0]
+    assert "access_token" not in cultivation["iot_snapshot"]["devices"][0]
+    assert len(cultivation["i2c_snapshot"]["device_assignments"]) == 2
+    motor = cultivation["i2c_snapshot"]["device_assignments"][1]
+    assert motor["channels"][0]["fluid_id"] == "base_a"
+    assert "fluid" not in motor["channels"][0]
+
+    started = next(item for item in bootstrap["events"] if item["type"] == "cultivation_started")
+    assert started["data"]["iot_snapshot"] == cultivation["iot_snapshot"]
+    assert started["data"]["i2c_snapshot"] == cultivation["i2c_snapshot"]
+
+
+def test_owned_product_cannot_be_deleted_while_assigned_to_a_pump(tmp_path):
+    service = GrowAsistService(GrowAsistStore(tmp_path / "growasist.db"))
+    service.update_nutrient_inventory({"products": [
+        {"id": "ph_up", "name": "pH+"},
+        {"id": "ph_down", "name": "pH-"},
+        {"id": "base_a", "name": "Base A", "category": "base"},
+    ]})
+    service.update_hardware({"device_assignments": [{
+        "address": 0x40,
+        "driver": "waveshare_motor_hat",
+        "name": "Motor HAT",
+        "channels": [
+            {"id": "A", "fluid_id": "base_a", "pump": {}, "calibration": None},
+            {"id": "B", "fluid_id": "unassigned", "pump": {}, "calibration": None},
+        ],
+    }]})
+
+    with pytest.raises(ValueError, match="dozaj pompasından"):
+        service.update_nutrient_inventory({"products": [
+            {"id": "ph_up", "name": "pH+"},
+            {"id": "ph_down", "name": "pH-"},
+        ]})
 
 
 def test_cannabis_requires_growth_type_when_no_catalog_cultivar_is_selected(tmp_path):

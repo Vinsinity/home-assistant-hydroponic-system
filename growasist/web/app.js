@@ -73,6 +73,11 @@ function localDate() {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
+function ownedNutrients() {
+  const inventory = state?.nutrient_inventory || {};
+  return (inventory.order || []).map((productId) => inventory.records?.[productId]).filter(Boolean);
+}
+
 function dayNumber(start) {
   if (!start) return 0;
   const first = new Date(`${start}T00:00:00`);
@@ -159,7 +164,7 @@ function syncNavigation() {
   if (!state) return;
   document.querySelector('[data-rail-count="plants"]').textContent = `${plantOptions().length} tür`;
   document.querySelector('[data-rail-count="profiles"]').textContent = `${growProfileOptions().length} profil`;
-  document.querySelector('[data-rail-count="nutrients"]').textContent = `${state.hardware?.dosing_fluids?.length || 0} ürün`;
+  document.querySelector('[data-rail-count="nutrients"]').textContent = `${ownedNutrients().length} ürün`;
   document.querySelector('[data-rail-count="hardware"]').textContent = `${state.hardware?.device_assignments?.length || 0} cihaz`;
   const iotCount = Object.values(state.device_registry?.devices || {}).length;
   document.querySelector('[data-rail-count="iot"]').textContent = `${iotCount} tanımlı`;
@@ -308,7 +313,7 @@ function renderSetup() {
     ["overview", "Alan ve ışık", "Yöntem, medya ve armatür"],
     ["plants", "Bitki kütüphanesi", `${plantOptions().length} tür`],
     ["profiles", "Profiller", `${growProfileOptions().length} yetiştirme profili`],
-    ["nutrients", "Besinler", `${state.hardware?.dosing_fluids?.length || 0} ürün`],
+    ["nutrients", "Besinler", `${ownedNutrients().length} ürün`],
     ["hardware", "Yerel donanım", `${state.hardware?.device_assignments?.length || 0} kablolu cihaz`],
     ["iot", "IoT cihazları", `${Object.values(state.device_registry?.devices || {}).length} tanımlı`],
   ];
@@ -557,7 +562,7 @@ function fluidMediumLabel(value) {
 function renderNutrients(panel) {
   const catalog = state.nutrient_catalog || {};
   const products = catalog.product_order || [];
-  const fluids = state.hardware?.dosing_fluids || [];
+  const fluids = ownedNutrients();
   const tabs = [
     ["products", "Markalar ve ürünler", `${products.length}`],
     ["mine", "Benim ürünlerim", `${fluids.length}`],
@@ -580,7 +585,7 @@ function nutrientProgramProducts(program, scope = "core") {
 }
 
 function renderNutrientProducts(panel) {
-  const fluids = state.hardware?.dosing_fluids || [];
+  const fluids = ownedNutrients();
   const catalog = state.nutrient_catalog || {};
   const brands = (catalog.brand_order || []).map((brandId) => catalog.brands?.[brandId]).filter(Boolean);
   const products = (catalog.product_order || []).map((productId) => catalog.products?.[productId]).filter(Boolean);
@@ -606,7 +611,7 @@ function renderNutrientProducts(panel) {
 }
 
 function renderMyNutrients(panel) {
-  const fluids = state.hardware?.dosing_fluids || [];
+  const fluids = ownedNutrients();
   panel.innerHTML = `<section class="my-nutrients"><header class="catalog-head"><div><span class="record-type">Elindeki ürünler</span><h3>Benim ürünlerim · ${fluids.length}</h3><p>Burada yalnızca sahip olduğun ürünler tutulur. Profil hedefleri Profiller, pompa bağlantısı ve kalibrasyon Dozaj bölümündedir.</p></div><button class="secondary-button" type="button" data-add-fluid>Özel ürün ekle</button></header><div class="record-ledger">${fluids.map((fluid) => `<button type="button" class="record-row" data-fluid-id="${html(fluid.id)}"><span class="record-code">${html(fluid.required ? "pH" : "N")}</span><span><b>${html(fluid.name)}</b><small>${html(fluid.brand || "Belirtilmedi")} · ${html(fluid.line || fluid.part || "Özel ürün")}</small></span><span>${html(fluidLabel(fluid))}</span><small>${html(fluidPhaseLabel(fluid.phase))} · ${html(fluidMediumLabel(fluid.medium))}</small><em>Düzenle</em></button>`).join("") || '<p class="empty-list">Henüz ürün eklenmedi. Markalar ve ürünler bölümünden ekleyebilir veya özel ürün oluşturabilirsin.</p>'}</div></section>`;
   panel.querySelector("[data-add-fluid]").addEventListener("click", () => openFluidDialog());
   panel.querySelectorAll("[data-fluid-id]").forEach((button) => button.addEventListener("click", () => openFluidDialog(fluids.find((item) => item.id === button.dataset.fluidId))));
@@ -632,12 +637,12 @@ function openFluidDialog(fluid = null) {
   openDialog({ kicker: "Besinler", title: edit ? "Ürünü düzenle" : "Ürün ekle", submitLabel: "Kaydet",
     body: `<div class="dialog-grid"><label><span>Ürün adı</span><input name="name" value="${html(fluid?.name || "")}" required></label><label><span>Marka</span><input name="brand" value="${html(fluid?.brand || "")}"></label><label><span>Kategori</span><select name="category" ${fluid?.required ? "disabled" : ""}>${[["base","Ana besin"],["supplement","Takviye"],["booster","Güçlendirici"],["biostimulant","Biyostimülan"],["conditioner","Ortam düzenleyici"],["cleaner","Temizleme / bitiş"],["other","Diğer"],["ph","pH düzenleyici"]].map(([id,label]) => `<option value="${id}" ${(fluid?.category || "other") === id ? "selected" : ""}>${label}</option>`).join("")}</select></label></div><details class="advanced-settings dialog-advanced"><summary>Ürün detayları</summary><div class="dialog-grid"><label><span>Seri</span><input name="line" value="${html(fluid?.line || "")}"></label><label><span>Parça</span><input name="part" value="${html(fluid?.part || "")}"></label><label><span>NPK</span><input name="npk" value="${html(fluid?.npk || "")}"></label><label><span>Üreticinin önerdiği aşama</span><select name="phase">${optionRows(phaseOptions, fluid?.phase || "all")}</select></label><label><span>Üreticinin önerdiği medya</span><select name="medium">${optionRows(mediumOptions, fluid?.medium || "all")}</select></label></div></details>`,
     onSubmit: async (data) => {
-      const fluids = JSON.parse(JSON.stringify(state.hardware?.dosing_fluids || []));
+      const fluids = JSON.parse(JSON.stringify(ownedNutrients()));
       const target = edit ? fluids.find((item) => item.id === fluid.id) : { id: `fluid_${id().slice(0,16)}`, required: false };
       for (const key of ["name","brand","category","line","part","npk","phase","medium"]) if (data.has(key)) target[key] = data.get(key);
       if (edit && target.catalog_id && target.name !== fluid.name) { target.catalog_id = ""; target.official = false; }
       if (!edit) fluids.push(target);
-      await api("/api/v1/hardware", { method: "POST", body: JSON.stringify({ dosing_fluids: fluids }) });
+      await api("/api/v1/nutrients/inventory", { method: "POST", body: JSON.stringify({ products: fluids }) });
       dialog.close(); await loadState(); currentSetupView = "nutrients"; showToast("Besin kataloğu kaydedildi.");
     },
   });
@@ -845,7 +850,7 @@ function openI2CDeviceDialog(candidate, item = null) {
 function renderDosing(panel) {
   const hardware = state.hardware || {};
   const policy = hardware.dosing_policy || {};
-  const fluids = hardware.dosing_fluids || [];
+  const fluids = ownedNutrients();
   const hats = (hardware.device_assignments || []).filter((item) => item.driver === "waveshare_motor_hat");
   const fluidOptions = (selected) => `<option value="unassigned" ${selected === "unassigned" ? "selected" : ""}>Atanmamış</option>${fluids.map((fluid) => `<option value="${html(fluid.id)}" ${selected === fluid.id ? "selected" : ""}>${html(fluid.name)} · ${html(fluid.brand || "")}</option>`).join("")}`;
   panel.innerHTML = `<form data-dosing-form><section class="hardware-section"><header class="section-head"><div><h3>Pompa kanalları</h3><small>Sıvıyı seç, kısa test yap ve ölçerek kalibre et</small></div></header>${hats.length ? hats.map((hat, hatIndex) => { const online = Boolean(i2cCandidate(hat.address)?.online); return `<div class="motor-hat ${online ? "" : "offline"}"><header><span><b>${html(hat.name)}</b><small>0x${Number(hat.address).toString(16).toUpperCase()} · ${online ? "kart bağlı" : "kart yanıt vermiyor"}</small></span></header>${(hat.channels || []).map((channel, channelIndex) => { const calibration = channel.calibration || {}; const ready = online && channel.fluid_id !== "unassigned" && calibration.flow_ml_s; const status = !online ? "Kart bağlantısı yok" : channel.fluid_id === "unassigned" ? "Sıvı seçilmedi" : !calibration.flow_ml_s ? "Kalibrasyon gerekli" : `${calibration.flow_ml_s} ml/sn · hazır`; return `<div class="motor-channel"><div class="channel-name"><span>${html(channel.id)}</span><div><b>${html(channel.name)}</b><small class="${ready ? "ready-text" : ""}">${html(status)}</small></div></div><div class="channel-setup"><label><span>Bu pompaya bağlı sıvı</span><select name="channel.${hatIndex}.${channelIndex}.fluid_id">${fluidOptions(channel.fluid_id)}</select></label><div class="channel-actions"><button class="secondary-button compact" type="button" data-pump-test data-address="${hat.address}" data-channel="${html(channel.id)}" ${online ? "" : "disabled"}>Kısa test</button><button class="secondary-button compact" type="button" data-pump-calibrate data-address="${hat.address}" data-channel="${html(channel.id)}" ${online ? "" : "disabled"}>${calibration.flow_ml_s ? "Yeniden kalibre et" : "Kalibre et"}</button></div><details class="advanced-settings channel-settings"><summary>Pompa bilgileri</summary><div class="field-grid simple-grid"><label><span>Pompa markası</span><input name="channel.${hatIndex}.${channelIndex}.pump_brand" value="${html(channel.pump?.brand || "")}"></label><label><span>Pompa modeli</span><input name="channel.${hatIndex}.${channelIndex}.pump_model" value="${html(channel.pump?.model || "")}"></label></div></details></div></div>`; }).join("")}</div>`; }).join("") : '<div class="device-empty"><span><b>Dozaj motor kartı bulunamadı</b><small>Motor kartını Raspberry Pi üzerine bağlayın ve Donanım bölümünde tarayın.</small></span><button class="secondary-button" type="button" data-go-hardware>Donanıma git</button></div>'}</section>
@@ -940,7 +945,7 @@ function openStartDialog() {
     kicker: "Yeni yetiştirme",
     title: "Yetiştirmeyi başlat",
     submitLabel: "Yetiştirmeyi başlat",
-    body: `<p class="start-lead">Bitkini ve yetiştirme profilini seç. Besin seçimi bu profile değil, yalnızca başlatacağın yetiştirmeye kaydedilir.</p>
+    body: `<p class="start-lead">Bitkini, bağımsız yetiştirme profilini ve kullanacağın besinleri seç. Tanımlı IoT ve I²C cihazları da o günkü halleriyle bu yetiştirmenin kaydına eklenir.</p>
       <div class="dialog-grid start-core">
         <label><span>Bitki türü</span><select name="plant_id" data-plant-select>${plants.map((plant) => `<option value="${html(plant.id)}">${html(plant.name)}</option>`).join("")}<option value="">Diğer / kendi bitkim</option></select></label>
         <label data-custom-plant hidden><span>Bitkinin adı</span><input name="plant_species" maxlength="96" placeholder="Tür veya yaygın adı"></label>

@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 
-JOURNAL_SCHEMA_VERSION = 7
+JOURNAL_SCHEMA_VERSION = 8
 
 EVENT_TYPES = frozenset(
     {
@@ -104,6 +104,8 @@ def empty_cultivation_view() -> dict[str, Any]:
         "grow_profile_snapshot": {},
         "genetics_snapshot": {},
         "nutrient_program_snapshot": {},
+        "iot_snapshot": {},
+        "i2c_snapshot": {},
         "start_date": "",
         "started_at": "",
         "completed_at": "",
@@ -305,6 +307,18 @@ def _normalize_record(record: dict[str, Any], record_id: str) -> dict[str, Any]:
         else {},
         maximum_bytes=32_768,
     )
+    result["iot_snapshot"] = _bounded_json(
+        result.get("iot_snapshot")
+        if isinstance(result.get("iot_snapshot"), dict)
+        else {},
+        maximum_bytes=32_768,
+    )
+    result["i2c_snapshot"] = _bounded_json(
+        result.get("i2c_snapshot")
+        if isinstance(result.get("i2c_snapshot"), dict)
+        else {},
+        maximum_bytes=32_768,
+    )
     result["plan"] = deepcopy(result.get("plan") if isinstance(result.get("plan"), list) else [])
     result["transitions"] = deepcopy(
         result.get("transitions") if isinstance(result.get("transitions"), list) else []
@@ -323,6 +337,8 @@ def new_cultivation(
     grow_profile_snapshot: dict[str, Any] | None = None,
     genetics_snapshot: dict[str, Any] | None = None,
     nutrient_program_snapshot: dict[str, Any] | None = None,
+    iot_snapshot: dict[str, Any] | None = None,
+    i2c_snapshot: dict[str, Any] | None = None,
     initial_stage: str | None = None,
     cultivation_id: str | None = None,
     timestamp: str | None = None,
@@ -354,6 +370,12 @@ def new_cultivation(
         ),
         "nutrient_program_snapshot": _bounded_json(
             nutrient_program_snapshot or {}, maximum_bytes=32_768
+        ),
+        "iot_snapshot": _bounded_json(
+            iot_snapshot or {}, maximum_bytes=32_768
+        ),
+        "i2c_snapshot": _bounded_json(
+            i2c_snapshot or {}, maximum_bytes=32_768
         ),
         "start_date": start_date,
         "started_at": timestamp,
@@ -414,6 +436,8 @@ def start_cultivation(
                 "grow_profile_snapshot": record.get("grow_profile_snapshot", {}),
                 "genetics_snapshot": record.get("genetics_snapshot", {}),
                 "nutrient_program_snapshot": record.get("nutrient_program_snapshot", {}),
+                "iot_snapshot": record.get("iot_snapshot", {}),
+                "i2c_snapshot": record.get("i2c_snapshot", {}),
             },
             created_by=created_by,
             created_at=record["started_at"],
